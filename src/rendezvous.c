@@ -3,6 +3,8 @@
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -45,8 +47,53 @@ static i32 init_listen_fd(u16 port) {
         return fd;
 }
 
-int main() {
+static void usage(const char *exe)
+{
+        printf("Usage: %s [options]\n\n", exe);
+        printf("Options:\n");
+        printf("  -p, --port <port>             Listening port (default=%d)\n",
+                DEFAULT_PORT);
+        printf("  -h, --help                    Show this help message\n\n" );
+        printf("Example:\n");
+        printf("  %s -p 1234\n", exe);
+}
+
+static u16 parse_args(int argc, char **argv)
+{
         u16 port = DEFAULT_PORT;
+
+        for (int i = 1; i < argc; i++) {
+                if (!strncmp(argv[i], "-h", 2) || !strncmp(argv[i], "--help", 6)) {
+                        usage(argv[0]);
+                        exit(EXIT_SUCCESS);
+                }
+                if (!strncmp(argv[i], "-p", 2) || !strncmp(argv[i], "--port", 6)) {
+                        if (i + 1 >= argc) {
+                                fprintf(stderr, "WARN: %s flag needs a numeric value; using %d\n",
+                                        argv[i], DEFAULT_PORT);
+                                continue;
+                        }
+                        int p = atoi(argv[++i]);
+                        if (p <= 0 || p > 65535) {
+                                fprintf(stderr, "WARN: invalid port '%s'; using %d\n",
+                                        argv[i], DEFAULT_PORT);
+                                continue;
+                        }
+                        port = (u16)p;
+                }
+                else {
+                        fprintf(stderr, "WARN: Unknown argument: %s\n", argv[i]);
+                        usage(argv[0]);
+                        exit(EXIT_FAILURE);
+                }
+        }
+
+        return port;
+}
+
+int main(int argc, char **argv)
+{
+        u16 port = parse_args(argc, argv);
         i32 server_fd = init_listen_fd(port);
         if (server_fd == -1) return 1;
 
