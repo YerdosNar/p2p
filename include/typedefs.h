@@ -13,4 +13,8 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+#define KB (1024u)
+#define MB (1024u * KB)
+#define GB (1024u * MB)
+
 #endif

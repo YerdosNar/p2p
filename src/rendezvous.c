@@ -12,6 +12,8 @@
 #include "../include/typedefs.h"
 #include "../include/logger.h"
 #include "../include/net.h"
+#include "../include/crypto.h"
+#include "../include/msgtype.h"
 
 #define DEFAULT_PORT   8888
 #define LISTEN_BACKLOG 128
@@ -93,6 +95,47 @@ static u16 parse_args(int argc, char **argv)
         return port;
 }
 
+static void handle_client(i32 client_fd)
+{
+        CryptoSession s;
+        if (!crypto_session_handshake(client_fd, &s)) {
+                log_warn("Handshake failed; closing.");
+                close(client_fd);
+                return;
+        }
+        log_info("Handshake complete; entering echo loop.");
+
+        for (;;) {
+                u8 type;
+                u8 *data = NULL;
+                u32 len = 0;
+
+                if (!crypto_recv_typed(client_fd, &type, &data, &len, &s)) {
+                        /* Either peer closed cleanly or bad frame. Either way.
+                         * we're done with this client. Screw him */
+                        log_info("Client disconnected.");
+                        break;
+                }
+
+                if (type != MSG_CHAT) {
+                        log_warn("Unexpected message type 0x%02x; closing.", type);
+                        free(data);
+                        break;
+                }
+
+                log_debug("Echoing %u bytes: '%s'", len, (char *)data);
+                if (!crypto_send_typed(client_fd, MSG_CHAT, data, len, &s)) {
+                        log_warn("Echo send failed; closing.");
+                        free(data);
+                        break;
+                }
+                free(data);
+        }
+
+        crypto_session_close(&s);
+        close(client_fd);
+}
+
 int main(int argc, char **argv)
 {
         u16 port = parse_args(argc, argv);
@@ -115,6 +158,7 @@ int main(int argc, char **argv)
                 log_info("Connection from %s:%u",
                                 inet_ntoa(ca.sin_addr),
                                 ntohs(ca.sin_port));
+                handle_client(client_fd);
 
                 log_debug("Closing client_fd=%d immediately.", client_fd);
                 close(client_fd);

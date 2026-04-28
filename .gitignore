@@ -58,3 +58,4 @@ dkms.conf
 test/*
 test/
 exe_*
+*.log
