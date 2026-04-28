@@ -229,9 +229,7 @@ bool crypto_recv_typed(i32 fd,
 
         if (rc != 0) {
                 log_error("secretstream_pull() failed: forged or corrupted.");
-                sodium_memzero(pt, pt_len);
-                free(pt);
-                return false;
+                goto fail_rt;
         }
         s->last_rx_tag = tag;
 
@@ -240,16 +238,12 @@ bool crypto_recv_typed(i32 fd,
                  * closes. A peer sending TAG_FINAL is either buggy or
                  * malicious -> treat as a protocol error */
                 log_error("Unexpected TAG_FINAL on control stream.");
-                sodium_memzero(pt, pt_len);
-                free(pt);
-                return false;
+                goto fail_rt;
         }
 
         if (actual_pt_len < 1) {
                 log_error("recv_typed(): empty plaintext (no type byte).");
-                sodium_memzero(pt, pt_len);
-                free(pt);
-                return false;
+                goto fail_rt;
         }
 
         *out_type = pt[0];
@@ -262,6 +256,11 @@ bool crypto_recv_typed(i32 fd,
         *out_data = pt;
         *out_len = payload_len;
         return true;
+
+fail_rt:
+        sodium_memzero(pt, pt_len);
+        free(pt);
+        return false;
 }
 
 void crypto_session_close(CryptoSession *s)
