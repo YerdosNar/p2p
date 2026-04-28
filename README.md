@@ -1,3 +1,4 @@
+(IN PROCESS: NOT WORKING)
 # OpenP2P
 
 **OpenP2P** is a lightweight, terminal-based application for secure, direct peer-to-peer (P2P) messaging and file transfer. Unlike many existing solutions, it prioritizes user privacy by eliminating account registration and leveraging direct connections between users.
