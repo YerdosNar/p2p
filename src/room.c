@@ -41,6 +41,11 @@ bool room_table_init(RoomTable *rt, u32 capacity)
 void room_table_destroy(RoomTable *rt)
 {
         if (!rt || !rt->rooms) return;
+        for (u32 i = 0; i < rt->capacity; i++) {
+                if (rt->rooms[i].is_active)
+                        sodium_memzero(rt->rooms[i].password,
+                                        sizeof(rt->rooms[i].password));
+        }
         free(rt->rooms);
         pthread_mutex_destroy(&rt->lock);
         memset(rt, 0, sizeof(*rt));
@@ -49,6 +54,7 @@ void room_table_destroy(RoomTable *rt)
 int room_register_host(
                 RoomTable           *rt,
                 const char          *id,
+                const char          *password,
                 const char          *host_ip,
                 const u16           host_port,
                 i32                 host_fd,
@@ -56,8 +62,14 @@ int room_register_host(
                 const CryptoSession *host_session,
                 const char          **err_msg)
 {
-        if (strlen(id) == 0 || strlen(id) > ROOM_ID_MAX) {
+        size_t id_len = strlen(id);
+        if (id_len == 0 || id_len > ROOM_ID_MAX) {
                 *err_msg = "ID length out of range";
+                return -1;
+        }
+        size_t pw_len = strlen(password);
+        if (pw_len == 0 || pw_len > ROOM_PW_MAX) {
+                *err_msg = "Password length out of range";
                 return -1;
         }
 
@@ -78,8 +90,12 @@ int room_register_host(
 
         Room *r = &rt->rooms[slot];
         memset(r, 0, sizeof(*r));
+
         strncpy(r->room_id, id, ROOM_ID_MAX);
         r->room_id[ROOM_ID_MAX] = '\0';
+        strncpy(r->password, password, ROOM_PW_MAX);
+        r->password[ROOM_PW_MAX] = '\0';
+
         strncpy(r->host_ip, host_ip, sizeof(r->host_ip) - 1);
         r->host_port = host_port;
         r->host_fd   = host_fd;
@@ -94,6 +110,7 @@ int room_register_host(
 
 bool room_claim(RoomTable       *rt,
                 const char      *id,
+                const char      *attempted_password,
                 char            *out_host_ip,
                 u16             *out_host_port,
                 i32             *out_host_fd,
@@ -106,7 +123,23 @@ bool room_claim(RoomTable       *rt,
         Room *r = find_by_id(rt, id);
         if (!r) {
                 pthread_mutex_unlock(&rt->lock);
+                log_debug("claim: no room with id '%s'", id);
                 *err_msg = "No such room";
+                return false;
+        }
+
+        size_t stored_len = strlen(r->password);
+        size_t attempted_len = strlen(attempted_password);
+
+        bool ok = (stored_len == attempted_len) &&
+                  (sodium_memcmp(r->password,
+                                 attempted_password,
+                                 stored_len) == 0);
+
+        if (!ok) {
+                pthread_mutex_unlock(&rt->lock);
+                log_debug("claim: bad password for '%s'", id);
+                *err_msg = "Authentication failed";
                 return false;
         }
 
@@ -117,6 +150,7 @@ bool room_claim(RoomTable       *rt,
         memcpy(out_host_pubkey, r->host_pubkey, CRYPTO_PUBKEYB);
         *out_host_session = r->host_session;
 
+        sodium_memzero(r->password, sizeof(r->password));
         r->is_active = false;
 
         pthread_mutex_unlock(&rt->lock);
