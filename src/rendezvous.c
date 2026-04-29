@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <errno.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -13,29 +14,18 @@
 #include "../include/logger.h"
 #include "../include/net.h"
 #include "../include/crypto.h"
-#include "../include/msgtype.h"
+#include "../include/protocol.h"
+#include "../include/room.h"
 
 #define DEFAULT_PORT   8888
 #define LISTEN_BACKLOG 128
 
-static i32 init_listen_fd(u16 port)
-{
-        struct sockaddr_in sa = {0};
-        sa.sin_family         = AF_INET;
-        sa.sin_addr.s_addr    = htonl(INADDR_ANY);
-        sa.sin_port           = htons(port);
-
-        int fd = net_make_bound_socket(&sa);
-        if (fd == -1) return -1;
-
-        if (listen(fd, LISTEN_BACKLOG) == -1) {
-                log_error("listen(): %s", strerror(errno));
-                close(fd);
-                return -1;
-        }
-
-        return fd;
-}
+typedef struct {
+        i32             client_fd;
+        char            client_ip[INET_ADDRSTRLEN];
+        u16             client_port;
+        RoomTable       *rt;
+} ClientCtx;
 
 static void usage(const char *exe)
 {
@@ -43,19 +33,22 @@ static void usage(const char *exe)
         printf("Options:\n");
         printf("  -p, --port <port>             Listening port (default=%d)\n",
                 DEFAULT_PORT);
+        printf("  -m, --max-rooms <n>           Max concurrent rooms (default=%d)\n",
+                ROOM_DEFAULT_MAX);
         printf("  -L, --log-level <level>       error|warn|info|debug (default=info)\n");
         printf("  -h, --help                    Show this help message\n\n");
         printf("Example:\n  %s -p 1234 -L debug\n", exe);
 }
 
-static u16 parse_args(int argc, char **argv)
+static void parse_args(int argc, char **argv,
+                u16 *port, u32 *max_rooms)
 {
-        u16 port = DEFAULT_PORT;
+        *port = DEFAULT_PORT;
+        *max_rooms = ROOM_DEFAULT_MAX;
 
         for (int i = 1; i < argc; i++) {
                 if (!strncmp(argv[i], "-h", 2) || !strncmp(argv[i], "--help", 6)) {
-                        usage(argv[0]);
-                        exit(EXIT_SUCCESS);
+                        usage(argv[0]); exit(EXIT_SUCCESS);
                 }
                 if (!strncmp(argv[i], "-p", 2) || !strncmp(argv[i], "--port", 6)) {
                         if (i + 1 >= argc) {
@@ -69,7 +62,21 @@ static u16 parse_args(int argc, char **argv)
                                          argv[i], DEFAULT_PORT);
                                 continue;
                         }
-                        port = (u16)p;
+                        *port = (u16)p;
+                }
+                else if (!strncmp(argv[i], "-m", 2) || !strncmp(argv[i], "--max-rooms", 11)) {
+                        if (i + 1 >= argc) {
+                                log_warn("'%s' flag needs a numeric value; using %d",
+                                                argv[i], ROOM_DEFAULT_MAX);
+                                continue;
+                        }
+                        int m = atoi(argv[++i]);
+                        if (m <= 0) {
+                                log_warn("Invalid number '%s'; using '%d'.",
+                                         argv[i], ROOM_DEFAULT_MAX);
+                                continue;
+                        }
+                        *max_rooms = (u32)m;
                 }
                 else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "--log-level", 11)) {
                         if (i + 1 >= argc) {
@@ -91,79 +98,109 @@ static u16 parse_args(int argc, char **argv)
                         exit(EXIT_FAILURE);
                 }
         }
-
-        return port;
 }
 
-static void handle_client(i32 client_fd)
+static i32 init_listen_fd(u16 port)
 {
+        struct sockaddr_in sa = {0};
+        sa.sin_family         = AF_INET;
+        sa.sin_addr.s_addr    = htonl(INADDR_ANY);
+        sa.sin_port           = htons(port);
+        int fd = net_make_bound_socket(&sa);
+        if (fd == -1) return -1;
+        if (listen(fd, LISTEN_BACKLOG) == -1) {
+                log_error("listen(): %s", strerror(errno));
+                close(fd);
+                return -1;
+        }
+        return fd;
+}
+
+/*
+ * Per-client thread. Owns the ClientCtx (frees it on exit). Runs the
+ * crypto handshake, then hands off to the protocol layer.
+ */
+static void *client_thread(void *arg)
+{
+        ClientCtx *ctx = arg;
+        log_info("Connection from %s:%u", ctx->client_ip, ctx->client_port);
+
         CryptoSession s;
-        if (!crypto_session_handshake(client_fd, &s)) {
-                log_warn("Handshake failed; closing.");
-                close(client_fd);
-                return;
+        if (!crypto_session_handshake(ctx->client_fd, &s)) {
+                log_warn("Crypto handshake failed for %s:%u",
+                         ctx->client_ip, ctx->client_port);
+                close(ctx->client_fd);
+                free(ctx);
+                return NULL;
         }
-        log_info("Handshake complete; entering echo loop.");
+        log_debug("Handshake complete with %s:%u",
+                  ctx->client_ip, ctx->client_port);
 
-        for (;;) {
-                u8 type;
-                u8 *data = NULL;
-                u32 len = 0;
+        protocol_handle_client(ctx->client_fd,
+                               ctx->client_ip, ctx->client_port,
+                               &s, ctx->rt);
 
-                if (!crypto_recv_typed(client_fd, &type, &data, &len, &s)) {
-                        /* Either peer closed cleanly or bad frame. Either way.
-                         * we're done with this client. Screw him */
-                        log_info("Client disconnected.");
-                        break;
-                }
-
-                if (type != MSG_CHAT) {
-                        log_warn("Unexpected message type 0x%02x; closing.", type);
-                        free(data);
-                        break;
-                }
-
-                log_debug("Echoing %u bytes: '%s'", len, (char *)data);
-                if (!crypto_send_typed(client_fd, MSG_CHAT, data, len, &s)) {
-                        log_warn("Echo send failed; closing.");
-                        free(data);
-                        break;
-                }
-                free(data);
-        }
-
+        /*
+         * Whether the protocol left the fd open (host case) or closed
+         * it (joiner case), our thread is done. Zero our copy of the
+         * session keys - the room table has a copy of it.
+         */
         crypto_session_close(&s);
-        close(client_fd);
+        room_print_stats(ctx->rt);
+        free(ctx);
+        return NULL;
 }
 
 int main(int argc, char **argv)
 {
-        u16 port = parse_args(argc, argv);
+        u16 port;
+        u32 max_rooms;
+        parse_args(argc, argv, &port, &max_rooms);
+
         i32 server_fd = init_listen_fd(port);
         if (server_fd == -1) return 1;
+        log_info("Listening on port %u (max rooms = %u)", port, max_rooms);
 
-        log_info("Rendezvous listening on port: %u.", port);
+        RoomTable rt;
+        if (!room_table_init(&rt, max_rooms)) {
+                log_error("room_table_init failed");
+                close(server_fd);
+                return 1;
+        }
 
         for (;;) {
                 struct sockaddr_in ca;
                 socklen_t ca_len = sizeof(ca);
-
                 i32 client_fd = accept(server_fd,
-                                (struct sockaddr *)&ca, &ca_len);
+                                       (struct sockaddr *)&ca, &ca_len);
                 if (client_fd == -1) {
                         log_warn("accept(): %s", strerror(errno));
                         continue;
                 }
 
-                log_info("Connection from %s:%u",
-                                inet_ntoa(ca.sin_addr),
-                                ntohs(ca.sin_port));
-                handle_client(client_fd);
+                ClientCtx *ctx = calloc(1, sizeof(*ctx));
+                if (!ctx) {
+                        log_error("calloc(ClientCtx) failed");
+                        close(client_fd);
+                        continue;
+                }
+                ctx->client_fd   = client_fd;
+                ctx->client_port = ntohs(ca.sin_port);
+                ctx->rt          = &rt;
+                inet_ntop(AF_INET, &ca.sin_addr,
+                          ctx->client_ip, sizeof(ctx->client_ip));
 
-                log_debug("Closing client_fd=%d immediately.", client_fd);
-                close(client_fd);
+                pthread_t tid;
+                if (pthread_create(&tid, NULL, client_thread, ctx) != 0) {
+                        log_error("pthread_create failed");
+                        close(client_fd);
+                        free(ctx);
+                        continue;
+                }
+                pthread_detach(tid);
         }
 
+        room_table_destroy(&rt);
         close(server_fd);
         return 0;
 }

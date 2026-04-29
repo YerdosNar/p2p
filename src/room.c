@@ -52,7 +52,7 @@ int room_register_host(
                 const char          *host_ip,
                 const u16           host_port,
                 i32                 host_fd,
-                const u8            *host_pubkey,
+                const u8            host_pubkey[CRYPTO_PUBKEYB],
                 const CryptoSession *host_session,
                 const char          **err_msg)
 {
@@ -97,7 +97,7 @@ bool room_claim(RoomTable       *rt,
                 char            *out_host_ip,
                 u16             *out_host_port,
                 i32             *out_host_fd,
-                u8              *out_host_pubkey,
+                u8              out_host_pubkey[CRYPTO_PUBKEYB],
                 CryptoSession   *out_host_session,
                 const char      **err_msg)
 {
