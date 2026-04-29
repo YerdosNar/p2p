@@ -16,6 +16,7 @@
  * Limits (final-form values; extend later as needed):
  */
 #define ROOM_ID_MAX      32
+#define ROOM_PW_MAX      32
 #define ROOM_DEFAULT_MAX 5000
 
 /*
@@ -25,6 +26,7 @@
  */
 typedef struct {
         char            room_id[ROOM_ID_MAX + 1];
+        char            password[ROOM_PW_MAX + 1];
         char            host_ip[INET_ADDRSTRLEN];
         u16             host_port;
         i32             host_fd;
@@ -66,6 +68,7 @@ void room_table_destroy(RoomTable *rt);
 int room_register_host(
                 RoomTable           *rt,
                 const char          *id,
+                const char          *password,
                 const char          *host_ip,
                 const u16           host_port,
                 i32                 host_fd,
@@ -82,6 +85,7 @@ int room_register_host(
  */
 bool room_claim(RoomTable       *rt,
                 const char      *id,
+                const char      *attempt_password,
                 char            *out_host_ip,
                 u16             *out_host_port,
                 i32             *out_host_fd,

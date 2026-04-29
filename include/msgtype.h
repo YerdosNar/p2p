@@ -23,6 +23,7 @@ typedef enum {
         PROTO_PEER_INFO = 0x13,
         PROTO_ERROR     = 0x14,
         PROTO_PUBKEY    = 0x15,
+        PROTO_ROOM_PASSWORD = 0x16,
 } MsgType;
 
 /*
