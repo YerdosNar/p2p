@@ -55,8 +55,8 @@ dkms.conf
 *.dwo
 
 # Custom ignore
-test/*
-test/
+test-f/*
+test-f/
 exe_*
 *.log
 a.out
