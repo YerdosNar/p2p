@@ -169,6 +169,11 @@ int main(int argc, char **argv)
         }
 
         for (;;) {
+                u32 swept = room_sweep_expired(&rt);
+                if (swept > 0) {
+                        log_info("Swept %u expired room(s)", swept);
+                }
+
                 struct sockaddr_in ca;
                 socklen_t ca_len = sizeof(ca);
                 i32 client_fd = accept(server_fd,

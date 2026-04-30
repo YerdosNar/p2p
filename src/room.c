@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int find_free_slot(const RoomTable *rt)
 {
@@ -155,6 +156,30 @@ bool room_claim(RoomTable       *rt,
 
         pthread_mutex_unlock(&rt->lock);
         return true;
+}
+
+u32 room_sweep_expired(RoomTable *rt)
+{
+        time_t now = time(NULL);
+        u32 swept = 0;
+
+        pthread_mutex_lock(&rt->lock);
+
+        for (u32 i = 0; i < rt->capacity; i++) {
+                Room *r = &rt->rooms[i];
+                if (!r->is_active) continue;
+                if (now - r->created_at < ROOM_TTL_SECONDS) continue;
+                log_info("Sweeping expired room '%s' (slot %u)",
+                         r->room_id, i);
+                close(r->host_fd);
+                sodium_memzero(r->password, sizeof(r->password));
+                sodium_memzero(&r->host_session, sizeof(r->host_session));
+                r->is_active = false;
+                swept++;
+        }
+
+        pthread_mutex_unlock(&rt->lock);
+        return swept;
 }
 
 void room_print_stats(RoomTable *rt)
