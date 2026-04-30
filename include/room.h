@@ -18,6 +18,7 @@
 #define ROOM_ID_MAX      32
 #define ROOM_PW_MAX      32
 #define ROOM_DEFAULT_MAX 5000
+#define ROOM_TTL_SECONDS 300
 
 /*
  * One slot in the table. is_active is the only "is this slot in use"
@@ -92,6 +93,18 @@ bool room_claim(RoomTable       *rt,
                 u8              out_host_pubkey[CRYPTO_PUBKEYB],
                 CryptoSession   *out_host_session,
                 const char      **err_msg);
+
+/*
+ * Walk the table; for any active room older than ROOM_TTL_SECONDS,
+ * close its host fd, wipe its key material, and free its slot.
+ *
+ * Returns the number of rooms swept (for logging).
+ *
+ * Safe to call from any thread; takes the table lock for its
+ * full duration. Serializes with room_register_host and room_claim
+ * so a sweep and a claim cannot race on the same slot.
+ */
+u32 room_sweep_expired(RoomTable *rt);
 
 /* Print "active/capacity" to log_info. */
 void room_print_stats(RoomTable *rt);
