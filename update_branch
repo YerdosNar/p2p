@@ -22,6 +22,7 @@ while read -r branch; do
                 echo "Aborting rebase for this branch to keep your repo clean..."
                 git rebase --about
         fi
+        echo ""
 done <<< "$branches"
 
 echo "RETURNING: $original_branch"

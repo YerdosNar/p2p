@@ -168,7 +168,7 @@ static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
         if (!crypto_send_typed(fd, PROTO_ROLE_RES,
                                (const u8 *)&a->role, 1, s)) return false;
         if (!crypto_send_typed(fd, PROTO_ROOM_ID,
-                               (const u8 *)&a->id,
+                               (const u8 *)a->id,
                                (u32)strlen(a->id), s)) return false;
         if (!crypto_send_typed(fd, PROTO_ROOM_PASSWORD,
                                (const u8 *)a->password,
