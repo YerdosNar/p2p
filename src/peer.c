@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "../include/logger.h"
 #include "../include/net.h"
@@ -10,8 +16,8 @@
 #include "../include/identity.h"
 #include "../include/room.h"
 
-#define DEFAULT_RENDEZVOUS_IP   "103.115.18.208"
-#define DEFAULT_RENDEZVOUS_PORT 888
+#define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
+#define DEFAULT_RENDEZVOUS_PORT 8888
 
 typedef struct {
         const char      *rendezvous_ip;
@@ -40,7 +46,7 @@ static void usage(const char *exe)
         printf("  -h, --help              Show this help\n");
 }
 
-static bool parse(int argc, char **argv, Args *a)
+static bool parse_args(int argc, char **argv, Args *a)
 {
         memset(a, 0, sizeof(*a));
         a->rendezvous_ip = DEFAULT_RENDEZVOUS_IP;
@@ -101,4 +107,159 @@ static bool parse(int argc, char **argv, Args *a)
                 return false;
         }
         return true;
+}
+
+/*
+ * Connect to rendezvous on a SO_REUSEPORT-bound local socket.
+ *
+ * Local port is 0 (kernel-chosen ephemeral). The kernel picks one
+ * port for our outgoing connection; that same port becomes the one
+ * we report to rendezvous, and (next branch) the one we'll listen
+ * on for the incoming peer connection.
+ */
+static int connect_rendezvous(const char *ip, u16 port)
+{
+        struct sockaddr_in local = {0};
+        local.sin_family      = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        local.sin_port        = 0;
+
+        i32 fd = net_make_bound_socket(&local);
+        if (fd == -1) return -1;
+
+        struct sockaddr_in remote = {0};
+        remote.sin_family = AF_INET;
+        remote.sin_port   = htons(port);
+        if (inet_pton(AF_INET, ip, &remote.sin_addr) != 1) {
+                log_error("Bad rendezvous IP: %s", ip);
+                close(fd);
+                return -1;
+        }
+
+        if (connect(fd, (struct sockaddr *)&remote, sizeof(remote)) == -1) {
+                log_error("connect(%s:%u): %s", ip, port, strerror(errno));
+                close(fd);
+                return -1;
+        }
+        return fd;
+}
+
+/*
+ * Run the rendezvous protocol from "connected" through receiving the
+ * peer info. Returns true on successful match.
+ */
+static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
+                           const Identity *id,
+                           char *out_peer_ip, u16 *out_peer_port,
+                           u8 out_peer_pubkey[IDENTITY_PUBKEY_BYTES])
+{
+        /* 1. Server sends ROLE_REQ */
+        u8 type;
+        u8 *payload = NULL;
+        u32 plen = 0;
+        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)
+                        || type != PROTO_ROLE_REQ) {
+                log_error("Expected ROLE_REQUEST, got 0x%02x", type);
+                free(payload); return false;
+        }
+        free(payload);
+
+        /* 2. Send our role, ID, password, pubkey */
+        if (!crypto_send_typed(fd, PROTO_ROLE_RES,
+                               (const u8 *)&a->role, 1, s)) return false;
+        if (!crypto_send_typed(fd, PROTO_ROOM_ID,
+                               (const u8 *)&a->id,
+                               (u32)strlen(a->id), s)) return false;
+        if (!crypto_send_typed(fd, PROTO_ROOM_PASSWORD,
+                               (const u8 *)a->password,
+                               (u32)strlen(a->password), s)) return false;
+        if (!crypto_send_typed(fd, PROTO_PUBKEY,
+                               id->pubkey,
+                               IDENTITY_PUBKEY_BYTES, s)) return false;
+
+        log_info("Registered as %s for room '%s'. Waiting for peer...",
+                 a->role == 'H' ? "host" : "joiner", a->id);
+
+        /* 3. Wait for PEER_INFO (or PROTO_ERROR) */
+        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
+                log_error("Connection lost before match");
+                return false;
+        }
+        if (type == PROTO_ERROR) {
+                log_error("Rendezvous error: %.*s", (int)plen, payload);
+                free(payload);
+                return false;
+        }
+        if (type != PROTO_PEER_INFO) {
+                log_error("Expected PEER_INFO, got 0x%02x", type);
+                free(payload);
+                return false;
+        }
+
+        /* Parse [ip_len:1][ip][port:2][pubkey:32] */
+        if (plen < 1) { free(payload); return false; }
+        u8 ip_len = payload[0];
+        u32 expected = 1u + ip_len + 2u + IDENTITY_PUBKEY_BYTES;
+        if (plen != expected || ip_len >= INET_ADDRSTRLEN) {
+                log_error("Malformed PEER_INFO");
+                free(payload);
+                return false;
+        }
+
+        memcpy(out_peer_ip, payload + 1, ip_len);
+        out_peer_ip[ip_len] = '\0';
+        u16 port_n;
+        memcpy(&port_n, payload + 1 + ip_len, 2);
+        *out_peer_port = ntohs(port_n);
+        memcpy(out_peer_pubkey, payload + 1 + ip_len + 2, IDENTITY_PUBKEY_BYTES);
+
+        free(payload);
+        return true;
+}
+
+int main(int argc, char **argv)
+{
+        Args args;
+        if (!parse_args(argc, argv, &args)) {
+                fprintf(stderr, "\n");
+                usage(argv[0]);
+                return 1;
+        }
+
+        Identity me;
+        if (!identity_load_or_create(&me, args.identity_path)) return 1;
+
+        char fp[IDENTITY_FINGERPRINT_BYTES];
+        identity_fingerprint(me.pubkey, fp);
+        log_info("My fingerprint: %s", fp);
+
+        i32 fd = connect_rendezvous(args.rendezvous_ip, args.rendezvous_port);
+        if (fd == -1) { identity_close(&me); return 1; }
+
+        CryptoSession s;
+        if (!crypto_session_handshake(fd, &s)) {
+                log_error("Crypto handshake with rendezvous failed");
+                close(fd); identity_close(&me); return 1;
+        }
+        log_debug("Encrypted channel to rendezvous established");
+
+        char peer_ip[INET_ADDRSTRLEN];
+        u16  peer_port;
+        u8   peer_pubkey[IDENTITY_PUBKEY_BYTES];
+
+        bool ok = run_rendezvous(fd, &s, &args, &me,
+                                 peer_ip, &peer_port, peer_pubkey);
+
+        crypto_session_close(&s);
+        close(fd);
+
+        if (ok) {
+                char peer_fp[IDENTITY_FINGERPRINT_BYTES];
+                identity_fingerprint(peer_pubkey, peer_fp);
+                log_info("Matched! peer=%s:%u  fingerprint=%s",
+                         peer_ip, peer_port, peer_fp);
+        }
+
+        identity_close(&me);
+        return ok ? 0 : 1;
 }
