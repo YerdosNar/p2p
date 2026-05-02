@@ -61,6 +61,28 @@ typedef struct {
 bool crypto_session_handshake(i32 fd, CryptoSession *out);
 
 /*
+ * Like crypto_session_handshake, but also binds the long-lived
+ * keypair into the derivation. The peer's long-lived pubkey must
+ * be known in advance (typically learned through the rendezvous)
+ *
+ * If the connected party is not the holder of peer_long_pk's
+ * secret key, the derived session keys won't match and the first
+ * recv will fail with a decryption error.
+ *
+ * Returns true on a successful handshake. The caller still needs
+ * to do at least one recv (e.g., a known-plaintext "hello") to
+ * confirm authentication actually held - the kx_session_keys
+ * call itself doesn't fail on a wrong long_pk; the divergence
+ * shows up at decrypt time.
+ */
+bool crypto_session_handshake_authenticated(
+                i32           fd,
+                const u8      my_long_pk[CRYPTO_PUBKEYB],
+                const u8      my_long_sk[CRYPTO_SECKEYB],
+                const u8      peer_long_pk[CRYPTO_SECKEYB],
+                CryptoSession *out);
+
+/*
  * Encrypt and send one typed message.
  *
  * 'data' may be NULL when 'len' == 0 (for empty-payload message).
