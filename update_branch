@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+if ! git diff-index --quiet HEAD --; then
+        echo "ERROR: uncommitted changes"
+        exit 1
+fi
+
+echo "Fetching latest changes from origin..."
+git fetch origin
+
+original_branch=$(git branch --show-current)
+
+branches=$(git branch --format='%(refname:short)')
+
+while read -r branch; do
+        echo "BRANCH: $branch"
+
+        git checkout "$branch"
+
+        if ! git rebase origin/master; then
+                echo "WARNING: Merge conflict or error on '$branch'."
+                echo "Aborting rebase for this branch to keep your repo clean..."
+                git rebase --about
+        fi
+done <<< "$branches"
+
+echo "RETURNING: $original_branch"
+git checkout "$original_branch"
+
+echo "Done!"
