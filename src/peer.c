@@ -15,6 +15,7 @@
 #include "../include/msgtype.h"
 #include "../include/identity.h"
 #include "../include/room.h"
+#include "../include/holepunch.h"
 
 #define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_PORT 8888
@@ -251,15 +252,80 @@ int main(int argc, char **argv)
                                  peer_ip, &peer_port, peer_pubkey);
 
         crypto_session_close(&s);
-        close(fd);
 
-        if (ok) {
-                char peer_fp[IDENTITY_FINGERPRINT_BYTES];
-                identity_fingerprint(peer_pubkey, peer_fp);
-                log_info("Matched! peer=%s:%u  fingerprint=%s",
-                         peer_ip, peer_port, peer_fp);
+        if (!ok) {
+                identity_close(&me);
+                return 1;
         }
 
+        char peer_fp[IDENTITY_FINGERPRINT_BYTES];
+        identity_fingerprint(peer_pubkey, peer_fp);
+        log_info("Matched! peer=%s:%u  fingerprint=%s",
+                 peer_ip, peer_port, peer_fp);
+
+        // Hole punch, close rendezvous_fd
+        i32 p2p_fd = holepunch_to_peer(fd, peer_ip, peer_port);
+        if (p2p_fd < 0) {
+                log_error("Hole-punch failed - peer unreachable.");
+                identity_close(&me);
+                return 1;
+        }
+
+        /* ID verification crypto_handshake */
+        CryptoSession p2p;
+        if (!crypto_session_handshake_authenticated(
+                                p2p_fd,
+                                me.pubkey, me.seckey,
+                                peer_pubkey, &p2p)) {
+                log_error("P2P crypto handshake failed.");
+                close(p2p_fd);
+                identity_close(&me);
+                return 1;
+        }
+
+        /*
+         * Authentication check: send a known-plaintext hello and recv
+         * the peer's. If the peer's pubkey was substituted, our session
+         * keys differ from theirs and the recv decrypt fails.
+         *
+         * This proves we're talking to the peer whose fingerprint we
+         * trust - not the rendezvous server, not a nework attacker.
+         */
+        const char *hello_msg = "P2P-HELLO";
+        if (!crypto_send_typed(p2p_fd, MSG_CHAT,
+                                (const u8 *)hello_msg,
+                                (u32)strlen(hello_msg), &p2p)) {
+                log_error("Failed to send P2P-HELLO");
+                goto p2p_done;
+        }
+
+        u8 ht;
+        u8 *hp = NULL;
+        u32 hl = 0;
+        if (!crypto_recv_typed(p2p_fd, &ht, &hp, &hl, &p2p)) {
+                log_error("Failed to recvv P2P-HELLO -- "
+                          "AUTHENTICATION FAILED. Peer's pubkey may have "
+                          "been substituted be MITM");
+                goto p2p_done;
+        }
+        if (ht != MSG_CHAT
+            || hl != strlen(hello_msg)
+            || memcmp(hp, hello_msg, hl) != 0) {
+                log_error("Peer sent unexpected hello: type=0x%02x len=%u",
+                                ht, hl);
+                free(hp);
+                goto p2p_done;
+        }
+        free(hp);
+
+        log_info("=== P2P Channel established ===");
+        log_info("    Peer fingerprint: %s", peer_fp);
+        log_info("    Verify this matches what the other side sees as");
+        log_info("    THEIR peer's fingerprint, via your shared channel");
+
+p2p_done:
+        crypto_session_close(&p2p);
+        close(p2p_fd);
         identity_close(&me);
         return ok ? 0 : 1;
 }

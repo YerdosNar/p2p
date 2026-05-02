@@ -6,6 +6,35 @@
 #include <string.h>
 #include <arpa/inet.h>
 
+/*
+ * Given a 32-byte symmetric key, exchange secretstream headers and
+ * initialize tx + rx state. Both directions of the session.
+ *
+ * Used by both anonymous and authenticated handshakes after they've
+ * each derived their key.
+ */
+static bool init_streams_from_key(i32 fd,
+                                  const u8 key[CRYPTO_KEY_BYTES],
+                                  CryptoSession *out)
+{
+        u8 tx_hdr[CRYPTO_HDR_BYTES];
+        if (crypto_secretstream_xchacha20poly1305_init_push(
+                                &out->tx, tx_hdr, key) != 0) {
+                log_error("init_push failed");
+                return false;
+        }
+        if (!net_send_all(fd, tx_hdr, sizeof(tx_hdr))) return false;
+
+        u8 rx_hdr[CRYPTO_HDR_BYTES];
+        if (!net_recv_all(fd, rx_hdr, sizeof(rx_hdr))) return false;
+        if (crypto_secretstream_xchacha20poly1305_init_pull(
+                                &out->rx, rx_hdr, key) != 0) {
+                log_error("init_pull failed (bad header)");
+                return false;
+        }
+        return true;
+}
+
 static bool derive_shared_key(const u8 my_pk[CRYPTO_PUBKEYB],
                               const u8 my_sk[CRYPTO_SECKEYB],
                               const u8 pr_pk[CRYPTO_PUBKEYB],
@@ -122,6 +151,113 @@ bool crypto_session_handshake(i32 fd, CryptoSession *out)
 
 fail:
         sodium_memzero(my_sk, sizeof(my_sk));
+        sodium_memzero(out, sizeof(*out));
+        return false;
+}
+
+bool crypto_session_handshake_authenticated(
+                i32      fd,
+                const u8 my_long_pk[CRYPTO_PUBKEYB],
+                const u8 my_long_sk[CRYPTO_SECKEYB],
+                const u8 peer_long_pk[CRYPTO_PUBKEYB],
+                CryptoSession *out)
+{
+        if (sodium_init() < 0) {
+                log_error("sodium_init() failed");
+                return false;
+        }
+        memset(out, 0, sizeof(*out));
+
+        // Generate ephemeral keypair
+        u8 ephem_pk[CRYPTO_PUBKEYB];
+        u8 ephem_sk[CRYPTO_SECKEYB];
+        crypto_kx_keypair(ephem_pk, ephem_sk);
+
+        // Exchange ephems
+        u8 peer_ephem_pk[CRYPTO_PUBKEYB];
+        if (!net_send_all(fd, ephem_pk, sizeof(ephem_pk))) goto fail;
+        if (!net_recv_all(fd, peer_ephem_pk, sizeof(peer_ephem_pk))) goto fail;
+
+        /*
+         * Two derivations: one from ephemerals (forward secrecy),
+         * one from long-lived (authentication). Mix.
+         *
+         * Role decision uses long-lived pubkey comparison. Same on both
+         * sides, so they pick complementary roles.
+         */
+        int role = memcmp(my_long_pk, peer_long_pk, CRYPTO_PUBKEYB);
+        if (role == 0) {
+                log_error("Long-lived pubkeys are identical "
+                          "(self-loop or duplicated identity).");
+                goto fail;
+        }
+
+        u8 k1_rx[crypto_kx_SESSIONKEYBYTES];
+        u8 k1_tx[crypto_kx_SESSIONKEYBYTES];
+        u8 k2_rx[crypto_kx_SESSIONKEYBYTES];
+        u8 k2_tx[crypto_kx_SESSIONKEYBYTES];
+
+        int rc1, rc2;
+        if (role < 0) {
+                rc1 = crypto_kx_client_session_keys(k1_rx, k1_tx,
+                                ephem_pk, ephem_sk, peer_ephem_pk);
+                rc2 = crypto_kx_client_session_keys(k2_rx, k2_tx,
+                                my_long_pk, my_long_sk, peer_long_pk);
+        } else {
+                rc1 = crypto_kx_server_session_keys(k1_rx, k1_tx,
+                                ephem_pk, ephem_sk, peer_ephem_pk);
+                rc2 = crypto_kx_server_session_keys(k2_rx, k2_tx,
+                                my_long_pk, my_long_sk, peer_long_pk);
+        }
+
+        sodium_memzero(ephem_sk, sizeof(ephem_sk));
+        if (rc1 != 0 || rc2 != 0) {
+                log_error("kx_session_keys failed");
+                sodium_memzero(k1_rx, sizeof(k1_rx));
+                sodium_memzero(k1_tx, sizeof(k1_tx));
+                sodium_memzero(k2_rx, sizeof(k2_rx));
+                sodium_memzero(k2_tx, sizeof(k2_tx));
+                goto fail;
+        }
+
+        /*
+         * Hash all four halves in a canonical (sorted) order so both
+         * sides compute the same final key regardless of role.
+         * Same trick as in the anonymous handshake.
+         */
+        u8 key[CRYPTO_KEY_BYTES];
+        const u8 *halves[4] = { k1_rx, k1_tx, k2_rx, k2_tx };
+        /* Insertion sort, 4 elements. Comparator: mecmp on the bytes. */
+        for (int i = 1; i < 4; i++) {
+                for (int j = i;
+                     j > 0 && memcmp(halves[j-1], halves[j],
+                                     crypto_kx_SESSIONKEYBYTES) > 0;
+                     j--) {
+                        const u8 *t = halves[j];
+                        halves[j] = halves[j-1];
+                        halves[j-1] = t;
+                }
+        }
+        crypto_generichash_state h;
+        crypto_generichash_init(&h, NULL, 0, CRYPTO_KEY_BYTES);
+        for (int i = 0; i < 4; i++) {
+                crypto_generichash_update(&h, halves[i],
+                                crypto_kx_SESSIONKEYBYTES);
+        }
+        crypto_generichash_final(&h, key, CRYPTO_KEY_BYTES);
+
+        sodium_memzero(k1_rx, sizeof(k1_rx));
+        sodium_memzero(k1_tx, sizeof(k1_tx));
+        sodium_memzero(k2_rx, sizeof(k2_rx));
+        sodium_memzero(k2_tx, sizeof(k2_tx));
+
+        bool ok = init_streams_from_key(fd, key, out);
+        sodium_memzero(key, sizeof(key));
+        if (!ok) goto fail;
+        return true;
+
+fail:
+        sodium_memzero(ephem_sk, sizeof(ephem_sk));
         sodium_memzero(out, sizeof(*out));
         return false;
 }
