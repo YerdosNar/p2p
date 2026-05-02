@@ -49,7 +49,7 @@ static void usage(const char *exe)
 static bool parse_args(int argc, char **argv, Args *a)
 {
         memset(a, 0, sizeof(*a));
-        a->rendezvous_ip = DEFAULT_RENDEZVOUS_IP;
+        a->rendezvous_ip   = DEFAULT_RENDEZVOUS_IP;
         a->rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
 
         for (int i = 1; i < argc; i++) {
@@ -83,7 +83,7 @@ static bool parse_args(int argc, char **argv, Args *a)
                         a->identity_path = argv[++i];
                 }
                 else if ((!strcmp(argv[i], "-L") || !strcmp(argv[i], "--log-level"))
-                                && i + 1 < argc) {
+                         && i + 1 < argc) {
                         LogLevel lvl;
                         if (logger_parse_level(argv[++i], &lvl))
                                 logger_set_level(lvl);
@@ -102,7 +102,7 @@ static bool parse_args(int argc, char **argv, Args *a)
                 return false;
         }
         if (strlen(a->password) == 0
-                        || strlen(a->password) > ROOM_PW_MAX) {
+            || strlen(a->password) > ROOM_PW_MAX) {
                 log_error("Password must be 1..%d chars", ROOM_PW_MAX);
                 return false;
         }
