@@ -32,7 +32,7 @@
  * eyeball comparison; users won't read all 32 bytes verbally.
  * Format chosen to match Signal's safety-numbers style.
  */
-#define IDENTITY_FINGERPRINT_BYTES 19 /* "XXXX XXXX XXXX XXXX" + NUL */
+#define IDENTITY_FINGERPRINT_BYTES 20 /* "XXXX XXXX XXXX XXXX" + NUL */
 
 typedef struct {
         u8 pubkey[IDENTITY_PUBKEY_BYTES];
