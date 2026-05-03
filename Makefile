@@ -37,7 +37,8 @@ RENDEZVOUS_SRC := \
 PEER_SRC := \
 	src/peer.c \
 	src/identity.c \
-	src/holepunch.c
+	src/holepunch.c \
+	src/chat.c
 
 # ── object file paths ─────────────────────────────────────────────────
 # Mirror source layout under build/. e.g. src/crypto.c -> build/src/crypto.o
@@ -91,6 +92,8 @@ build/src/rendezvous.o: include/logger.h    include/net.h       include/crypto.h
 build/src/identity.o:   include/identity.h  include/logger.h    include/typedefs.h
 build/src/holepunch.o:  include/holepunch.h include/net.h       include/logger.h \
                         include/typedefs.h
+build/src/chat.o: 	include/chat.h      include/crypto.h    include/msgtype.h \
+			include/logger.h    include/typedefs.h
 build/src/peer.o:       include/logger.h    include/net.h       include/crypto.h \
                         include/msgtype.h   include/identity.h  include/room.h \
                         include/holepunch.h include/typedefs.h

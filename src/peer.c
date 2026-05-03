@@ -16,6 +16,7 @@
 #include "../include/identity.h"
 #include "../include/room.h"
 #include "../include/holepunch.h"
+#include "../include/chat.h"
 
 #define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_PORT 8888
@@ -322,6 +323,9 @@ int main(int argc, char **argv)
         log_info("    Peer fingerprint: %s", peer_fp);
         log_info("    Verify this matches what the other side sees as");
         log_info("    THEIR peer's fingerprint, via your shared channel");
+
+        chat_run(p2p_fd, &p2p, peer_fp);
+        goto p2p_done;
 
 p2p_done:
         crypto_session_close(&p2p);
