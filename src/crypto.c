@@ -251,6 +251,12 @@ bool crypto_session_handshake_authenticated(
         sodium_memzero(k2_rx, sizeof(k2_rx));
         sodium_memzero(k2_tx, sizeof(k2_tx));
 
+        {
+                char hex[CRYPTO_KEY_BYTES * 2 + 1];
+                sodium_bin2hex(hex, sizeof(hex), key, CRYPTO_KEY_BYTES);
+                log_debug("derived session key: %s", hex);
+        }
+
         bool ok = init_streams_from_key(fd, key, out);
         sodium_memzero(key, sizeof(key));
         if (!ok) goto fail;

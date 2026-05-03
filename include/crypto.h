@@ -79,7 +79,7 @@ bool crypto_session_handshake_authenticated(
                 i32           fd,
                 const u8      my_long_pk[CRYPTO_PUBKEYB],
                 const u8      my_long_sk[CRYPTO_SECKEYB],
-                const u8      peer_long_pk[CRYPTO_SECKEYB],
+                const u8      peer_long_pk[CRYPTO_PUBKEYB],
                 CryptoSession *out);
 
 /*

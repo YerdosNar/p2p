@@ -1,3 +1,4 @@
+#include <sodium/utils.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -248,8 +249,13 @@ int main(int argc, char **argv)
         u16  peer_port;
         u8   peer_pubkey[IDENTITY_PUBKEY_BYTES];
 
+        char hex[IDENTITY_PUBKEY_BYTES * 2 + 1];
+        sodium_bin2hex(hex, sizeof(hex), peer_pubkey, sizeof(peer_pubkey));
+        log_debug("P_PUBKEY before rendezvous: %s", hex);
         bool ok = run_rendezvous(fd, &s, &args, &me,
                                  peer_ip, &peer_port, peer_pubkey);
+        sodium_bin2hex(hex, sizeof(hex), peer_pubkey, sizeof(peer_pubkey));
+        log_debug("P_PUBKEY after rendezvous: %s", hex);
 
         crypto_session_close(&s);
 
@@ -271,6 +277,13 @@ int main(int argc, char **argv)
                 return 1;
         }
 
+        // Debuggin purpose only
+        {
+                char a[65], b[65];
+                sodium_bin2hex(a, sizeof(a), me.pubkey, IDENTITY_PUBKEY_BYTES);
+                sodium_bin2hex(b, sizeof(b), peer_pubkey, IDENTITY_PUBKEY_BYTES);
+                log_debug("auth handshake inputs: \n\tme=%s \n\tpeer=%s", a, b);
+        }
         /* ID verification crypto_handshake */
         CryptoSession p2p;
         if (!crypto_session_handshake_authenticated(

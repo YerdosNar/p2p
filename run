@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -e
+
+compile() {
+        file=$1
+        b_name=$(basename $file)
+        ef="exe_${b_name%.*}"
+        if [[ ! -f "$ef" || "$file" -nt "$ef" ]]; then
+                echo "COMPILING..."
+                gcc -g -o "$ef" "$file" -Wall -Wextra -Wpedantic src/logger.c src/net.c src/crypto.c src/protocol.c src/room.c src/identity.c src/holepunch.c -lsodium
+        else
+                echo "No COMPILING."
+        fi
+}
+
+if [ "$1" == "-p" ]; then
+        compile src/peer.c
+elif [ "$1" == "-r" ]; then
+        compile src/rendezvous.c
+elif [ "$1" == "-t" ]; then
+        compile test/echo_client.c
+elif [ "$1" == "-c" ]; then
+        rm exe_*
+fi
