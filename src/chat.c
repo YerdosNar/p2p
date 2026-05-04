@@ -15,17 +15,14 @@
 #define INPUT_BUF_MAX   KB
 #define PROMPT          "> "
 
-static char             g_input[INPUT_BUF_MAX];
-static size_t           g_input_len = 0;
-static pthread_mutex_t  g_input_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static pthread_mutex_t  g_io_lock = PTHREAD_MUTEX_INITIALIZER;
-
+static size_t           g_input_len     = 0;
+static pthread_mutex_t  g_input_lock    = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t  g_io_lock       = PTHREAD_MUTEX_INITIALIZER;
+static bool             g_tio_saved     = false;
+static i32              g_fd            = -1;
+static CryptoSession   *g_session       = NULL;
+static char             g_input           [INPUT_BUF_MAX];
 static struct termios   g_old_tio;
-static bool             g_tio_saved = false;
-
-static i32              g_fd      = -1;
-static CryptoSession   *g_session = NULL;
 
 static void restore_termios(void)
 {
