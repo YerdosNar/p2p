@@ -16,6 +16,8 @@
 typedef enum {
         MSG_RESERVED    = 0x00,
         MSG_CHAT        = 0x01,
+        MSG_BYE         = 0x02,
+        MSG_NAME        = 0x03,
 
         PROTO_ROLE_REQ  = 0x10,
         PROTO_ROLE_RES  = 0x11,

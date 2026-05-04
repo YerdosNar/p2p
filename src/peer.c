@@ -16,6 +16,7 @@
 #include "../include/identity.h"
 #include "../include/room.h"
 #include "../include/holepunch.h"
+#include "../include/chat.h"
 
 #define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_PORT 8888
@@ -218,6 +219,72 @@ static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
         return true;
 }
 
+static bool check_fingerprint(i32 fd, CryptoSession *s)
+{
+        const char *hello_msg = "P2P-HELLO";
+        if (!crypto_send_typed(fd, MSG_CHAT,
+                                (const u8 *)hello_msg,
+                                (u32)strlen(hello_msg), s)) {
+                log_error("Failed to send P2P-HELLO");
+                return false;
+        }
+
+        u8 ht;
+        u8 *hp = NULL;
+        u32 hl = 0;
+        if (!crypto_recv_typed(fd, &ht, &hp, &hl, s)) {
+                log_error("Failed to recv P2P-HELLO -- "
+                          "AUTHENTICATION FAILED. Peer's pubkey may have "
+                          "been substituted be MITM");
+                return false;
+        }
+        if (ht != MSG_CHAT
+            || hl != strlen(hello_msg)
+            || memcmp(hp, hello_msg, hl) != 0) {
+                log_error("Peer sent unexpected hello: type=0x%02x len=%u",
+                                ht, hl);
+                free(hp);
+                return false;
+        }
+        free(hp);
+        return true;
+}
+
+static bool name_exchange(
+                i32             fd,
+                char            *my_name,
+                char            *out_peer_name,
+                CryptoSession   *s)
+{
+        if (!crypto_send_typed(fd, MSG_NAME,
+                                (const u8 *)my_name,
+                                (u32)strlen(my_name), s)) {
+                log_error("Failed to send our my_name");
+                return false;
+        }
+
+        u8 type;
+        u32 len;
+        u8 *name_payload = NULL;
+        if (!crypto_recv_typed(fd, &type, &name_payload, &len, s)) {
+                log_error("Failed to recv peer name");
+                return false;
+        }
+        if (type != MSG_NAME) {
+                log_error("Peer sent unexpected type: type=0x%02x", type);
+                return false;
+        }
+        if (len <= 0 || len >= 32) {
+                log_warn("Name is longer than the buffer: "
+                         "Will be truncated");
+                len = 32;
+        }
+        memcpy(out_peer_name, (const char*)name_payload, len);
+        out_peer_name[len] = '\0';
+
+        return true;
+}
+
 int main(int argc, char **argv)
 {
         Args args;
@@ -291,37 +358,32 @@ int main(int argc, char **argv)
          * This proves we're talking to the peer whose fingerprint we
          * trust - not the rendezvous server, not a nework attacker.
          */
-        const char *hello_msg = "P2P-HELLO";
-        if (!crypto_send_typed(p2p_fd, MSG_CHAT,
-                                (const u8 *)hello_msg,
-                                (u32)strlen(hello_msg), &p2p)) {
-                log_error("Failed to send P2P-HELLO");
+        if (!check_fingerprint(p2p_fd, &p2p)) {
+                log_error("check_fingerprint failed");
                 goto p2p_done;
         }
 
-        u8 ht;
-        u8 *hp = NULL;
-        u32 hl = 0;
-        if (!crypto_recv_typed(p2p_fd, &ht, &hp, &hl, &p2p)) {
-                log_error("Failed to recvv P2P-HELLO -- "
-                          "AUTHENTICATION FAILED. Peer's pubkey may have "
-                          "been substituted be MITM");
+        // Exchange names
+        char my_name[32];
+        char peer_name[32];
+        printf("Enter your name: ");
+        fgets(my_name, sizeof(my_name) - 1, stdin);
+        net_strip_newline(my_name);
+        if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
+                log_error("name_exchange failed");
                 goto p2p_done;
         }
-        if (ht != MSG_CHAT
-            || hl != strlen(hello_msg)
-            || memcmp(hp, hello_msg, hl) != 0) {
-                log_error("Peer sent unexpected hello: type=0x%02x len=%u",
-                                ht, hl);
-                free(hp);
-                goto p2p_done;
-        }
-        free(hp);
 
         log_info("=== P2P Channel established ===");
         log_info("    Peer fingerprint: %s", peer_fp);
+        log_info("    Peer name       : %s", peer_name);
         log_info("    Verify this matches what the other side sees as");
         log_info("    THEIR peer's fingerprint, via your shared channel");
+
+        chat_run(p2p_fd, &p2p, peer_fp,
+                 (const char*)peer_name,
+                 (const char*)my_name);
+        goto p2p_done;
 
 p2p_done:
         crypto_session_close(&p2p);
