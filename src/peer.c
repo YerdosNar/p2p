@@ -252,12 +252,10 @@ static bool check_fingerprint(i32 fd, CryptoSession *s)
 
 static bool name_exchange(
                 i32             fd,
+                char            *my_name,
                 char            *out_peer_name,
                 CryptoSession   *s)
 {
-        printf("Enter your name: ");
-        char my_name[32];
-        fgets(my_name, sizeof(my_name) - 1, stdin);
         if (!crypto_send_typed(fd, MSG_NAME,
                                 (const u8 *)my_name,
                                 (u32)strlen(my_name), s)) {
@@ -364,8 +362,13 @@ int main(int argc, char **argv)
                 goto p2p_done;
         }
 
+        // Exchange names
+        char my_name[32];
         char peer_name[32];
-        if (!name_exchange(p2p_fd, peer_name, &p2p)) {
+        printf("Enter your name: ");
+        fgets(my_name, sizeof(my_name) - 1, stdin);
+        net_strip_newline(my_name);
+        if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
                 log_error("name_exchange failed");
                 goto p2p_done;
         }
@@ -376,7 +379,9 @@ int main(int argc, char **argv)
         log_info("    Verify this matches what the other side sees as");
         log_info("    THEIR peer's fingerprint, via your shared channel");
 
-        chat_run(p2p_fd, &p2p, peer_fp);
+        chat_run(p2p_fd, &p2p, peer_fp,
+                 (const char*)peer_name,
+                 (const char*)my_name);
         goto p2p_done;
 
 p2p_done:

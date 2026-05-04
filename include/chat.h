@@ -22,6 +22,10 @@
  * This function never returns normally; it exit()s the process when
  * the chat ends. Termios is restored before exit, including on SIGINT/SIGTERM.
  */
-void chat_run(i32 fd, CryptoSession *session, const char *peer_fp);
+void chat_run(i32               fd,
+              CryptoSession     *session,
+              const char        *peer_fp,
+              const char        *peer_name,
+              const char        *my_name);
 
 #endif
