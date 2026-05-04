@@ -279,7 +279,8 @@ static bool name_exchange(
                          "Will be truncated");
                 len = 32;
         }
-        strncpy(out_peer_name, (const char*)name_payload, len);
+        memcpy(out_peer_name, (const char*)name_payload, len);
+        out_peer_name[len] = '\0';
 
         return true;
 }

@@ -14,7 +14,6 @@
 #include <errno.h>
 
 #define INPUT_BUF_MAX 1024
-#define PROMPT        "> "
 
 /* ── shared state ────────────────────────────────────────────────── */
 
@@ -327,7 +326,7 @@ void chat_run(i32               fd,
         printf("Chatting with peer (fingerprint %s). Type /quit or Ctrl-D to exit.\n",
                peer_fp);
         fflush(stdout);
-        io_write_str(PROMPT);
+        io_write_str(g_my_name);
         pthread_mutex_unlock(&g_io_lock);
 
         pthread_t rx;
