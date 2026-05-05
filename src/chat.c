@@ -183,12 +183,6 @@ static void *recv_thread(void *arg)
                         _exit(0);
                 }
 
-                if (type != MSG_CHAT) {
-                        log_warn("Ignoring unexpected message type 0x%02x", type);
-                        free(data);
-                        continue;
-                }
-
                 if (type == MSG_FILE_OFFER) {
                         FileOffer offer;
                         if (!file_offer_parse(data, len, &offer)) {
@@ -262,6 +256,12 @@ static void *recv_thread(void *arg)
                         io_write_raw(g_input, g_input_len);
                         pthread_mutex_unlock(&g_io_lock);
                         pthread_mutex_unlock(&g_input_lock);
+                        continue;
+                }
+
+                if (type != MSG_CHAT) {
+                        log_warn("Ignoring unexpected message type 0x%02x", type);
+                        free(data);
                         continue;
                 }
 
