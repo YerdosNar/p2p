@@ -13,19 +13,19 @@ original_branch=$(git branch --show-current)
 branches=$(git branch --format='%(refname:short)')
 
 while read -r branch; do
-        echo "BRANCH: \033[32$branch\033[0m"
+        echo -e "BRANCH: \033[32m$branch\033[0m"
 
-        git checkout "$branch"
+        git checkout -q "$branch"
 
         if ! git rebase origin/master; then
-                echo "\033[33mWARNING\033[0m: Merge conflict or error on '$branch'."
+                echo -e "\033[33mWARNING\033[0m: Merge conflict or error on '$branch'."
                 echo "Aborting rebase for this branch to keep your repo clean..."
-                git rebase --about
+                git rebase --abort
         fi
         echo ""
 done <<< "$branches"
 
-echo "RETURNING: \033[34m$original_branch"
-git checkout "$original_branch"
+echo -e "RETURNING: \033[34m$original_branch\033[0m"
+git checkout -q "$original_branch"
 
-echo "Done!\033[0m"
+echo -e "Done!\033[0m"
