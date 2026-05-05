@@ -26,6 +26,10 @@ typedef enum {
         PROTO_ERROR     = 0x14,
         PROTO_PUBKEY    = 0x15,
         PROTO_ROOM_PASSWORD = 0x16,
+
+        MSG_FILE_OFFER  = 0x20,
+        MSG_FILE_ACCEPT = 0x21,
+        MSG_FILE_REJECT = 0x22,
 } MsgType;
 
 /*
