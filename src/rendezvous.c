@@ -35,6 +35,7 @@ static void usage(const char *exe)
                 DEFAULT_PORT);
         printf("  -m, --max-rooms <n>           Max concurrent rooms (default=%d)\n",
                 ROOM_DEFAULT_MAX);
+        printf("  -t, --room-ttl <secs>         Room expiry in seconds (default 300)\n");
         printf("  -L, --log-level <level>       error|warn|info|debug (default=info)\n");
         printf("  -h, --help                    Show this help message\n\n");
         printf("Example:\n  %s -p 1234 -L debug\n", exe);
@@ -77,6 +78,19 @@ static void parse_args(int argc, char **argv,
                                 continue;
                         }
                         *max_rooms = (u32)m;
+                }
+                else if (!strncmp(argv[i], "-t", 2) || !strncmp(argv[i], "--room-ttl", 10)) {
+                        if (i + 1 > argc) {
+                                log_warn("'%s' flag needs a numeric value", argv[i]);
+                                continue;
+                        }
+                        int t = atoi(argv[++i]);
+                        if (t <= 0) {
+                                log_warn("Invalid TTL '%s'", argv[i]);
+                                continue;
+                        }
+                        g_room_ttl_seconds = (u32)t;
+                        log_info("Room TTL set to %d seconds", t);
                 }
                 else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "--log-level", 11)) {
                         if (i + 1 >= argc) {

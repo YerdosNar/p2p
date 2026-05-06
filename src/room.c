@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+u32 g_room_ttl_seconds = ROOM_TTL_DEFAULT;
+
 static int find_free_slot(const RoomTable *rt)
 {
         for (u32 i = 0; i < rt->capacity; i++) {
@@ -168,7 +170,7 @@ u32 room_sweep_expired(RoomTable *rt)
         for (u32 i = 0; i < rt->capacity; i++) {
                 Room *r = &rt->rooms[i];
                 if (!r->is_active) continue;
-                if (now - r->created_at < ROOM_TTL_SECONDS) continue;
+                if (now - r->created_at < g_room_ttl_seconds) continue;
                 log_info("Sweeping expired room '%s' (slot %u)",
                          r->room_id, i);
                 close(r->host_fd);
