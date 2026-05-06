@@ -1,5 +1,6 @@
 #include "../include/progress.h"
 #include "../include/file_offer.h"
+#include "../include/logger.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -156,6 +157,8 @@ void progress_init(ProgressBar *p, const char *label,
         p->io_lock      = io_lock;
         clock_gettime(CLOCK_MONOTONIC, &p->started);
         p->last_drawn   = p->started;
+
+        log_debug("Terminal width: %u", p->tty_width);
 
         pthread_mutex_lock(p->io_lock);
         draw(p, p->started);
