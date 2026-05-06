@@ -6,6 +6,7 @@
 #include "typedefs.h"
 
 #include <stdbool.h>
+#include <pthread.h>
 
 /*
  * file_stream.h - streaming a single file over an established P2P session.
@@ -23,7 +24,8 @@
  * Does not wait for MSG_TRANFER_DONE - caller's recv loop picks that up.
  */
 bool file_stream_send(i32 fd, CryptoSession *control,
-                      const char *path, u64 expected_size);
+                      const char *path, u64 expected_size,
+                      pthread_mutex_t *io_lock);
 
 /*
  * Receiver side. Reads MSG_TRANSFER_HEADER from the control stream
@@ -38,6 +40,7 @@ bool file_stream_send(i32 fd, CryptoSession *control,
  */
 bool file_stream_recv(i32 fd, CryptoSession *control,
                       const FileOffer *offer,
-                      const u8 *hdr_payload, u32 header_len);
+                      const u8 *hdr_payload, u32 header_len,
+                      pthread_mutex_t *io_lock);
 
 #endif

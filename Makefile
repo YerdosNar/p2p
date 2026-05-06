@@ -40,7 +40,8 @@ PEER_SRC := \
 	src/holepunch.c \
 	src/chat.c \
 	src/file_offer.c \
-	src/file_stream.c
+	src/file_stream.c \
+	src/progress.c
 
 # ── object file paths ─────────────────────────────────────────────────
 # Mirror source layout under build/. e.g. src/crypto.c -> build/src/crypto.o
@@ -92,6 +93,7 @@ build/src/holepunch.o:  include/logger.h    include/typedefs.h  include/holepunc
 build/src/chat.o: 	include/logger.h    include/typedefs.h  include/crypto.h include/chat.h   include/msgtype.h include/file_offer.h include/file_stream.h
 build/src/file_offer.o: include/logger.h    include/typedefs.h  include/file_offer.h
 build/src/file_stream.o:include/logger.h    include/typedefs.h  include/crypto.h include/file_stream.h include/file_offer.h include/msgtype.h
+build/src/progress.o:   include/progress.h  include/typedefs.h
 build/src/peer.o:       include/logger.h    include/typedefs.h  include/crypto.h \
                         include/msgtype.h   include/identity.h  include/room.h \
                         include/holepunch.h include/net.h
