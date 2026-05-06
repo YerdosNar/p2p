@@ -1,69 +1,124 @@
-(IN PROCESS: NOT WORKING)
 # OpenP2P
 
-**OpenP2P** is a lightweight, terminal-based application for secure, direct peer-to-peer (P2P) messaging and file transfer. Unlike many existing solutions, it prioritizes user privacy by eliminating account registration and leveraging direct connections between users.
+End-to-end encrypted peer-to-peer chat and file transfer over the public
+internet. Two friends share a room ID and password, and OpenP2P does the rest:
+NAT traversal, identity verification, encrypted chat, encrypted file transfer.
 
-## 🚀 Key Features
+No central server stores messages. The rendezvous server only introduces peers
+to each other; it cannot decrypt or read any traffic.
 
-* **No Accounts**: Start chatting instantly without creating an account or providing an email address.
-* **Direct P2P**: Uses TCP Hole Punching to establish direct connections between peers, bypassing NAT and minimizing reliance on third-party servers once connected.
-* **End-to-End Encryption (E2EE)**: All communications are secured using libsodium’s industry-standard cryptographic primitives.
-* **Integrated Messaging**: Supports real-time, encrypted chat alongside file transfers.
-* **Secure File Transfer**: Features a robust protocol with file offers, manual acceptance, and resume-safe partial writes.
-* **Real-time Progress**: View transfer speeds (MB/s), completion percentages, and estimated time of arrival (ETA) during file exchanges.
+## Features
 
-## 🛠 Architecture
+- End-to-end encryption (X25519 + XChaCha20-Poly1305 via libsodium)
+- Hole-punching through most consumer NATs
+- Persistent identity keys with verifiable fingerprints
+- Authenticated handshake (resists man-in-the-middle by the rendezvous)
+- Live file transfers with progress, resume-on-collision, ETA
+- Forward secrecy: past sessions remain confidential if long-term keys leak
 
-OpenP2P consists of two primary components:
+## Building
 
-1.  **Rendezvous Server**: A lightweight discovery service that facilitates peer matching via Room IDs and passwords. It never touches your actual chat or file data.
-2.  **Peer Client**: The core application that handles hole punching, performs the cryptographic handshake, and maintains the direct P2P data stream.
+Requirements:
 
-## 🛡 Security Model
-
-* **Key Exchange**: X25519 (via `crypto_kx_*`) is used to derive unique session keys for every connection.
-* **Encryption**: All data is encrypted and authenticated using XChaCha20-Poly1305-IETF.
-* **Forward Compatibility**: The protocol includes internal type-tagging to distinguish between chat messages and file protocol metadata.
-
-## 📦 Building and Installation
-
-The project is written in C11 and requires `libsodium`.
+- Linux (tested on Arch and Termux/Android)
+- gcc with C11 support
+- libsodium (`apt install libsodium-dev`, `pacman -S libsodium`, etc.)
+- pthreads (standard on Linux)
 
 ```bash
-# Clone the repository
-git clone https://github.com/YerdosNar/OpenP2P.git
-cd OpenP2P
-
-# Compile both the peer and rendezvous server
-make
+make            # builds rendezvous + peer with -O2
+make debug      # -O0 -g for gdb
+make asan       # -O0 -g + AddressSanitizer; use before merging changes
+make clean      # just clean, nothing else...
 ```
 
-## 📋 Usage
+Output binaries: `./rendezvous` and `./peer`.
 
-### 1. Start the Rendezvous Server
-The server should be hosted on a machine with a public IP.
+## Quick start
+
+You need a rendezvous server reachable by both peers. Two options:
+
+**Option A: run your own** (recommended for testing or private use)
+
 ```bash
-./rendezvous -p 8888 -l con.log
+# On a VPS or any machine reachable by both peers:
+./rendezvous --port 8888
 ```
 
-### 2. Connect as a Peer
-Peers connect to the server to find one another. You can specify a Room ID once prompted.
+**Option B: use a public rendezvous**
+
+If a public OpenP2P rendezvous server exists, point both peers at tis address.
+Note that any rendezvous server can attempt to MITM the initial handshake;
+**always verify peer fingerprints out-of-band** when using a rendezvous you don't control. (See "Security model" below)
+
+Once a rendezvous is reachable, on the host side:
 ```bash
-./peer -d your-rendezvous-domain.com -s 8888
+./peer --host alice --password coffee --rendezvous-ip <some-ip>
 ```
 
-### 3. File Transfer Command
-Within the chat interface, use the following command to initiate a transfer:
-```text
-/sendfile
+On the joiner side:
+```bash
+./peer --join alice --password coffee --rendezvous-ip <some-ip>
 ```
-You will be prompted to enter the path to the file you wish to send.
 
-## ⚖️ How it Compares
+After the handshake completes, both peers see:
+```ascii
+=== P2P Channel established ===
+Peer fingerprint: 8f3a 92b1 c4d7 e8f0
+Chatting with peer (fingerprint 8f3a 92b1 c4d7 e8f0).
+/quit       end the session
+/send PATH  send a file
+```
 
-| Feature | OpenP2P | ToffeeShare | Croc |
-| :--- | :--- | :--- | :--- |
-| **Account Required** | No | No | No |
-| **Messaging** | Yes | No | No |
-| **P2P Connection** | Direct (Hole Punch) | Browser-based | Relay (often) |
-| **Interface** | Terminal | Web/Mobile | Terminal |
+Type freely. `/send /path/to/file.pdf` initiates a file transfer; the peer
+gets a y/n prompt. `/quit` or Ctrl-D ends the session.
+
+## Verifying your peer
+
+The fingerprint shown after connection is derived from your peer's long-term
+public key. To confirm you're talking to the right person and not an attacker
+substituting their own key at the rendezvous:
+
+1. Read your fingerprint to your peer over a separate channel (phone call,
+   in person, signed message).
+2. Have them confirm their fingerprint matches what your terminal shows under
+   "Peer fingerprint."
+3. If they match, the channel is end-to-end secure.
+4. If they don't, abort: someone is in the middle.
+
+Long-term keys are stored at `$XDG_CONFIG_HOME/openp2p/identity.key` (or
+`~/.config/openp2p/identity.key`). The same key persists across sessions, so
+fingerprints stay stable.
+
+## Security model
+
+OpenP2P provides:
+
+- Confidentiality and integrity of all traffic between peers
+- Identity verification (when fingerprints are confirmed out-of-band)
+- Forward secrecy — past sessions stay private even if your long-term key
+  later leaks
+- The rendezvous server cannot decrypt traffic between peers
+
+OpenP2P does **not** protect against:
+
+- A malicious rendezvous denying the introduction (it can simply refuse)
+- A malicious rendezvous attempting MITM if users skip fingerprint
+  verification on first contact
+- Compromise of either peer's machine
+- Traffic analysis (an observer can see *that* two peers are communicating,
+  even though they cannot read what they say)
+- Brute-force attacks on weak room passwords against a colluding rendezvous
+
+This is a hobby project, not a hardened communication tool. For threats above
+"casual eavesdropping," use Signal.
+
+## Documentation
+
+- [USAGE.md](USAGE.md) — full flag reference, common scenarios, troubleshooting
+- [ARCHITECTURE.md](ARCHITECTURE.md) — code structure, protocol, threading
+  model — read this before modifying the code
+
+## License
+
+MIT — see [LICENSE](LICENSE).
