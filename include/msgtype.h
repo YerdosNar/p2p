@@ -14,22 +14,24 @@
  * and stands out in debugging.
  */
 typedef enum {
-        MSG_RESERVED    = 0x00,
-        MSG_CHAT        = 0x01,
-        MSG_BYE         = 0x02,
-        MSG_NAME        = 0x03,
+        MSG_RESERVED            = 0x00,
+        MSG_CHAT                = 0x01,
+        MSG_BYE                 = 0x02,
+        MSG_NAME                = 0x03,
 
-        PROTO_ROLE_REQ  = 0x10,
-        PROTO_ROLE_RES  = 0x11,
-        PROTO_ROOM_ID   = 0x12,
-        PROTO_PEER_INFO = 0x13,
-        PROTO_ERROR     = 0x14,
-        PROTO_PUBKEY    = 0x15,
-        PROTO_ROOM_PASSWORD = 0x16,
+        PROTO_ROLE_REQ          = 0x10,
+        PROTO_ROLE_RES          = 0x11,
+        PROTO_ROOM_ID           = 0x12,
+        PROTO_PEER_INFO         = 0x13,
+        PROTO_ERROR             = 0x14,
+        PROTO_PUBKEY            = 0x15,
+        PROTO_ROOM_PASSWORD     = 0x16,
 
-        MSG_FILE_OFFER  = 0x20,
-        MSG_FILE_ACCEPT = 0x21,
-        MSG_FILE_REJECT = 0x22,
+        MSG_FILE_OFFER          = 0x20,
+        MSG_FILE_ACCEPT         = 0x21,
+        MSG_FILE_REJECT         = 0x22,
+        MSG_TRANSFER_HDR        = 0x23,
+        MSG_TRANSFER_DONE       = 0x24,
 } MsgType;
 
 /*

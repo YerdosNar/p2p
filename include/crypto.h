@@ -47,6 +47,76 @@ typedef struct {
 } CryptoSession;
 
 /*
+ * Transfer-stream send/recv. Used for streaming a single file via a
+ * dedicated secretstream that gets created at the start of a transfer
+ * and discard at the end (TAG_FINAL).
+ *
+ * The transfer stream's wire format is the same length-prefix + AEAD
+ * frame as the control stream, but plaintext has no type byte (the
+ * receiver knows it's expecting file data).
+ *
+ * State for the transfer stream is per-direction; sender holds tx,
+ * receiver hols rx. Allocated them on the stack at transfer start
+ * and zero them on completion.
+ */
+typedef struct {
+        crypto_secretstream_xchacha20poly1305_state state;
+} XferStreamTx;
+
+typedef struct {
+        crypto_secretstream_xchacha20poly1305_state state;
+        u8 last_tag;
+} XferStreamRx;
+
+#define XFER_KEY_BYTES  CRYPTO_KEY_BYTES
+#define XFER_HDR_BYTES  CRYPTO_HDR_BYTES
+#define XFER_MAX_CHUNK  (64u * KB)
+
+/*
+ * Initialize a sender stream: generate fresh key, init push, return
+ * the header to send. Caller stores key + header in the
+ * MSG_TRANSFER_HEADER payload (key first, then header).
+ *
+ * Return true on success.
+ */
+bool crypto_xfer_init_sender(XferStreamTx *out,
+                             u8 key[XFER_KEY_BYTES],
+                             u8 hdr[XFER_HDR_BYTES]);
+
+/*
+ * Initialize a receiver stream from a key + header received over the
+ * control channel. Returns true on success.
+ */
+bool crypto_xfer_init_receiver(XferStreamRx *out,
+                               const u8 key[XFER_KEY_BYTES],
+                               const u8 hdr[XFER_HDR_BYTES]);
+
+/*
+ * Send one chunk on the transfer stream. tag is TAG_MESSAGE for
+ * normal chunks, TAG_FINAL for the last one.
+ *
+ * Frames the chunk with a 4-byte length prefix, same as control stream.
+ */
+bool crypto_xfer_send_chunk(i32 fd, XferStreamTx *s,
+                            const u8 *data, u32 len,
+                            u8 tag);
+
+/*
+ * Receive one chunk. Allocates a heap buffer for the plaintext (Caller
+ * frees).
+ *
+ * On success: *out_len is the chunk size, and s->last_tag is set to
+ *              TAG_MESSAGE or TAG_FINAL.
+ * On failure: return false
+ *
+ * Failure reasons: framing error, oversized frame, or AEAD failure.
+ */
+bool crypto_xfer_recv_chunk(i32, XferStreamRx *s,
+                            u8 **out_data, u32 *out_len);
+
+void crypto_xfer_close(void *stream); // Zeroes either tx or rx state
+
+/*
  * Run the full handshake on an already-connected socket.
  *
  * Both peers call this. Roles (client/server in the kx sense) are
