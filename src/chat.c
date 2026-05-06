@@ -300,7 +300,7 @@ static void *recv_thread(void *arg)
                         pthread_mutex_unlock(&g_io_lock);
 
                         bool ok = file_stream_send(g_fd, g_session,
-                                                   path, size);
+                                                   path, size, &g_io_lock);
 
                         pthread_mutex_lock(&g_input_lock);
                         g_xfer_mode = XFER_IDLE;
@@ -326,7 +326,8 @@ static void *recv_thread(void *arg)
                         }
 
                         bool ok = file_stream_recv(g_fd, g_session,
-                                                   &offer, data, len);
+                                                   &offer, data, len,
+                                                   &g_io_lock);
                         free(data);
 
                         pthread_mutex_lock(&g_input_lock);

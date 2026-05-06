@@ -3,6 +3,7 @@
 #include "../include/msgtype.h"
 #include "../include/logger.h"
 #include "../include/typedefs.h"
+#include "../include/progress.h"
 
 #include <sodium/crypto_secretstream_xchacha20poly1305.h>
 #include <stdio.h>
@@ -79,7 +80,8 @@ static ssize_t read_chunk(i32 fd, u8 *buf, size_t max)
 }
 
 bool file_stream_send(i32 fd, CryptoSession *control,
-                 const char *path, u64 expected_size)
+                 const char *path, u64 expected_size,
+                 pthread_mutex_t *io_lock)
 {
         int src = open(path, O_RDONLY);
         if (src < 0) {
@@ -117,6 +119,8 @@ bool file_stream_send(i32 fd, CryptoSession *control,
         u64 total_sent = 0;
         bool success = true;
 
+        ProgressBar pb;
+        progress_init(&pb, "Sending", expected_size, io_lock);
         if (expected_size == 0) {
                 if (!crypto_xfer_send_chunk(fd, &tx, buf, 0,
                             crypto_secretstream_xchacha20poly1305_TAG_FINAL)) {
@@ -158,9 +162,11 @@ bool file_stream_send(i32 fd, CryptoSession *control,
                                 break;
                         }
                         total_sent += (u64)n;
+                        progress_tick(&pb, total_sent);
                         if (is_last) break;
                 }
         }
+        if (success) progress_done(&pb);
 
         sodium_memzero(buf, sizeof(buf));
         close(src);
@@ -170,7 +176,8 @@ bool file_stream_send(i32 fd, CryptoSession *control,
 
 bool file_stream_recv(i32 fd, CryptoSession *control,
                       const FileOffer *offer,
-                      const u8 *hdr_payload, u32 hdr_len)
+                      const u8 *hdr_payload, u32 hdr_len,
+                      pthread_mutex_t *io_lock)
 {
         (void)control;
         if (hdr_len != XFER_KEY_BYTES + XFER_HDR_BYTES) {
@@ -211,6 +218,8 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
         u64 total_recv = 0;
         bool success = true;
 
+        ProgressBar pb;
+        progress_init(&pb, "Receiving", offer->size, io_lock);
         for (;;) {
                 u8 *chunk = NULL;
                 u32 clen = 0;
@@ -231,6 +240,7 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
                         break;
                 }
                 total_recv += (u64)clen;
+                progress_tick(&pb, total_recv);
                 sodium_memzero(chunk, clen);
                 free(chunk);
 
@@ -248,6 +258,8 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
         if (!success) {
                 unlink(partial);
                 return false;
+        } else {
+                progress_done(&pb);
         }
 
         if (total_recv != offer->size) {
