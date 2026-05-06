@@ -14,6 +14,13 @@
 #define FULL_BLOCK  "\xE2\x96\x88"
 #define LIGHT_SHADE "\xE2\x96\x91"
 
+static bool stdout_is_tty(void)
+{
+        static int cached = -1;
+        if (cached == -1) cached = isatty(STDOUT_FILENO) ? 1 : 0;
+        return cached == 1;
+}
+
 static double seconds_between(struct timespec a, struct timespec b)
 {
         return (double)(b.tv_sec  - a.tv_sec)
@@ -133,6 +140,7 @@ void progress_init(ProgressBar *p, const char *label,
 void progress_tick(ProgressBar *p, u64 current_bytes)
 {
         p->current = current_bytes;
+        if (!stdout_is_tty()) return;
 
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -153,12 +161,28 @@ void progress_done(ProgressBar *p)
 {
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
-        p->last_drawn = now;
+        p->current = p->total;
 
         pthread_mutex_lock(p->io_lock);
-        p->current = p->total;
-        draw(p, now);
-        ssize_t _ = write(STDOUT_FILENO, "\n", 1);
-        (void)_;
+        if (stdout_is_tty()) {
+                draw(p, now);
+                ssize_t _ = write(STDOUT_FILENO, "\n", 1);
+                (void)_;
+        } else {
+                /* Non-TTY: emit a single summary line. */
+                double elapsed = seconds_between(p->started, now);
+                char tot[16], rate[24];
+                file_offer_format_size(p->total, tot, sizeof(tot));
+                format_rate(elapsed > 0.01 ? p->total / elapsed : 0,
+                            rate, sizeof(rate));
+                char line[128];
+                int n = snprintf(line, sizeof(line),
+                                 "%s complete: %s in %.1fs (%s)\n",
+                                 p->label, tot, elapsed, rate);
+                if (n > 0) {
+                        ssize_t _ = write(STDOUT_FILENO, line, (size_t)n);
+                        (void)_;
+                }
+        }
         pthread_mutex_unlock(p->io_lock);
 }
