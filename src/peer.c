@@ -35,17 +35,17 @@ static void usage(const char *exe)
         printf("Usage: %s --host <id> --password <pw> [options]\n", exe);
         printf("       %s --join <id> --password <pw> [options]\n\n", exe);
         printf("Options:\n");
-        printf("  --host <id>             Create a room\n");
-        printf("  --join <id>             Join a room\n");
-        printf("  --password <pw>         Room password (required, max %d)\n",
+        printf("  -H, --host <id>             Create a room\n");
+        printf("  -J, --join <id>             Join a room\n");
+        printf("  -P, --password <pw>         Room password (required, max %d)\n",
                ROOM_PW_MAX);
-        printf("  --rendezvous-ip <ip>    Rendezvous server IP (default %s)\n",
+        printf("  -i, --rendezvous-ip <ip>    Rendezvous server IP (default %s)\n",
                DEFAULT_RENDEZVOUS_IP);
-        printf("  --rendezvous-port <p>   Rendezvous server port (default %d)\n",
+        printf("  -p, --rendezvous-port <p>   Rendezvous server port (default %d)\n",
                DEFAULT_RENDEZVOUS_PORT);
-        printf("  --identity <path>       Override identity file location\n");
-        printf("  -L, --log-level <lvl>   error|warn|info|debug (default info)\n");
-        printf("  -h, --help              Show this help\n");
+        printf("  --identity <path>           Override identity file location\n");
+        printf("  -L, --log-level <lvl>       error|warn|info|debug (default info)\n");
+        printf("  -h, --help                  Show this help\n");
 }
 
 static bool parse_args(int argc, char **argv, Args *a)
@@ -58,27 +58,37 @@ static bool parse_args(int argc, char **argv, Args *a)
                 if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                         usage(argv[0]); exit(0);
                 }
-                else if (!strcmp(argv[i], "--host") && i + 1 < argc) {
+                else if ((!strncmp(argv[i], "-H", 2)
+                                || !strncmp(argv[i], "--host", 6))
+                                && i + 1 < argc) {
                         if (a->role) {
                                 log_error("--host and --join are mutually exclusive");
                                 return false;
                         }
                         a->role = 'H'; a->id = argv[++i];
                 }
-                else if (!strcmp(argv[i], "--join") && i + 1 < argc) {
+                else if ((!strncmp(argv[i], "-J", 2)
+                                || !strncmp(argv[i], "--join", 6))
+                                && i + 1 < argc) {
                         if (a->role) {
                                 log_error("--host and --join are mutually exclusive");
                                 return false;
                         }
                         a->role = 'J'; a->id = argv[++i];
                 }
-                else if (!strcmp(argv[i], "--password") && i + 1 < argc) {
+                else if ((!strncmp(argv[i], "-P", 2)
+                                || !strcmp(argv[i], "--password"))
+                                && i + 1 < argc) {
                         a->password = argv[++i];
                 }
-                else if (!strcmp(argv[i], "--rendezvous-ip") && i + 1 < argc) {
+                else if ((!strncmp(argv[i], "-i", 2)
+                                || !strcmp(argv[i], "--rendezvous-ip"))
+                                && i + 1 < argc) {
                         a->rendezvous_ip = argv[++i];
                 }
-                else if (!strcmp(argv[i], "--rendezvous-port") && i + 1 < argc) {
+                else if ((!strncmp(argv[i], "-p", 2)
+                                || !strcmp(argv[i], "--rendezvous-port"))
+                                && i + 1 < argc) {
                         a->rendezvous_port = (u16)atoi(argv[++i]);
                 }
                 else if (!strcmp(argv[i], "--identity") && i + 1 < argc) {
