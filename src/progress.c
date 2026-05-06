@@ -19,21 +19,21 @@
 #define PROGRESS_BAR_MAX        60
 #define PROGRESS_LABEL_RESERVE  75
 
-static u16 get_term_width(void)
+static int get_term_width(void)
 {
         struct winsize ws;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
-                return (u16)ws.ws_col;
+                return ws.ws_col;
         if (ioctl(STDIN_FILENO,  TIOCGWINSZ, &ws) == 0 && ws.ws_col)
-                return (u16)ws.ws_col;
+                return ws.ws_col;
         if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
-                return (u16)ws.ws_col;
+                return ws.ws_col;
         return (u16)PROGRESS_BAR_WIDTH;
 }
 
-static u16 compute_bar_width(u16 tty_width)
+static int compute_bar_width(int tty_width)
 {
-        u16 available = tty_width - PROGRESS_LABEL_RESERVE;
+        int available = tty_width - PROGRESS_LABEL_RESERVE;
         if (available < PROGRESS_BAR_MIN) return PROGRESS_BAR_MIN;
         if (available > PROGRESS_BAR_MAX) return PROGRESS_BAR_MAX;
         return available;
@@ -155,10 +155,10 @@ void progress_init(ProgressBar *p, const char *label,
         p->total        = total_bytes;
         p->current      = 0;
         p->io_lock      = io_lock;
-        clock_gettime(CLOCK_MONOTONIC, &p->started);
+        clock_gettime   (CLOCK_MONOTONIC, &p->started);
         p->last_drawn   = p->started;
 
-        log_debug("Terminal width: %u", p->tty_width);
+        log_debug("Terminal width set to %d", p->tty_width);
 
         pthread_mutex_lock(p->io_lock);
         draw(p, p->started);
