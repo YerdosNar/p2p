@@ -18,8 +18,9 @@
 #define ROOM_ID_MAX      32
 #define ROOM_PW_MAX      32
 #define ROOM_DEFAULT_MAX 5000
-#define ROOM_TTL_SECONDS 300
+#define ROOM_TTL_DEFAULT 300
 
+extern u32 g_room_ttl_seconds;
 /*
  * One slot in the table. is_active is the only "is this slot in use"
  * marker - there's no separate free list. find_free_slot just scans
