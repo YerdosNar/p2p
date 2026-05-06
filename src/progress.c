@@ -22,13 +22,13 @@
 static int get_term_width(void)
 {
         struct winsize ws;
-        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
                 return ws.ws_col;
-        if (ioctl(STDIN_FILENO,  TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+        if (ioctl(STDIN_FILENO,  TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
                 return ws.ws_col;
-        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
                 return ws.ws_col;
-        return (u16)PROGRESS_BAR_WIDTH;
+        return PROGRESS_BAR_WIDTH;
 }
 
 static int compute_bar_width(int tty_width)
