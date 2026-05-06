@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 /*
  * Block chars for the bar, UTF-8 encoded.
@@ -13,6 +14,29 @@
 
 #define FULL_BLOCK  "\xE2\x96\x88"
 #define LIGHT_SHADE "\xE2\x96\x91"
+#define PROGRESS_BAR_MIN        10
+#define PROGRESS_BAR_MAX        60
+#define PROGRESS_LABEL_RESERVE  75
+
+static u16 get_term_width(void)
+{
+        struct winsize ws;
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+                return (u16)ws.ws_col;
+        if (ioctl(STDIN_FILENO,  TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+                return (u16)ws.ws_col;
+        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col)
+                return (u16)ws.ws_col;
+        return (u16)PROGRESS_BAR_WIDTH;
+}
+
+static u16 compute_bar_width(u16 tty_width)
+{
+        u16 available = tty_width - PROGRESS_LABEL_RESERVE;
+        if (available < PROGRESS_BAR_MIN) return PROGRESS_BAR_MIN;
+        if (available > PROGRESS_BAR_MAX) return PROGRESS_BAR_MAX;
+        return available;
+}
 
 static bool stdout_is_tty(void)
 {
@@ -69,11 +93,11 @@ static void draw(ProgressBar *p, struct timespec now)
 
         int filled = 0;
         if (p->total > 0) {
-                filled = (int)((p->current * (u64)PROGRESS_BAR_WIDTH)
+                filled = (int)((p->current * (u64)p->tty_width)
                                 / p->total);
         }
-        if (filled > PROGRESS_BAR_WIDTH) filled = PROGRESS_BAR_WIDTH;
-        int empty = PROGRESS_BAR_WIDTH - filled;
+        if (filled > p->tty_width) filled = p->tty_width;
+        int empty = p->tty_width - filled;
 
         int pct = 0;
         if (p->total > 0) {
@@ -125,12 +149,13 @@ void progress_init(ProgressBar *p, const char *label,
                    u64 total_bytes, pthread_mutex_t *io_lock)
 {
         memset(p, 0, sizeof(*p));
-        p->label = label;
-        p->total = total_bytes;
-        p->current = 0;
-        p->io_lock = io_lock;
+        p->label        = label;
+        p->tty_width    = compute_bar_width(get_term_width());
+        p->total        = total_bytes;
+        p->current      = 0;
+        p->io_lock      = io_lock;
         clock_gettime(CLOCK_MONOTONIC, &p->started);
-        p->last_drawn = p->started;
+        p->last_drawn   = p->started;
 
         pthread_mutex_lock(p->io_lock);
         draw(p, p->started);

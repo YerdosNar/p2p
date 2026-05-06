@@ -14,6 +14,7 @@
 
 typedef struct {
         const char      *label;
+        u16             tty_width;
         u64             total;
         u64             current;
         struct timespec started;
