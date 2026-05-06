@@ -399,6 +399,109 @@ fail_rt:
         return false;
 }
 
+bool crypto_xfer_init_sender(XferStreamTx *out,
+                             u8 key[XFER_KEY_BYTES],
+                             u8 hdr[XFER_HDR_BYTES])
+{
+        crypto_secretstream_xchacha20poly1305_keygen(key);
+        if (crypto_secretstream_xchacha20poly1305_init_push(
+                                &out->state, hdr, key) != 0) {
+                log_error("xfer init_push failed");
+                return false;
+        }
+        return true;
+}
+
+bool crypto_xfer_init_receiver(XferStreamRx *out,
+                               const u8 key[XFER_KEY_BYTES],
+                               const u8 hdr[XFER_HDR_BYTES])
+{
+        memset(out, 0, sizeof(*out));
+        if (crypto_secretstream_xchacha20poly1305_init_pull(
+                                &out->state, hdr, key) != 0) {
+                log_error("xfer init_pull failed (bad header)");
+                return false;
+        }
+        return true;
+}
+
+bool crypto_xfer_send_chunk(i32 fd, XferStreamTx *s,
+                            const u8 *data, u32 len,
+                            u8 tag)
+{
+        if (len > XFER_MAX_CHUNK) {
+                log_error("xfer send: chunk too large (%u)", len);
+                return false;
+        }
+
+        /*
+         * Stack buffer sized for max chunk + AEAD overhead.
+         * 64 KiB + 17 bytes; well within typical stack limits.
+         */
+        u8 ct[XFER_MAX_CHUNK + CRYPTO_TAG_BYTES];
+        unsigned long long ct_len = 0;
+        int rc = crypto_secretstream_xchacha20poly1305_push(
+                        &s->state, ct, &ct_len,
+                        data, len, NULL, 0, tag);
+        if (rc != 0) {
+                log_error("xfer secretstream_push failed");
+                return false;
+        }
+
+        u32 net_len = htonl((u32)ct_len);
+        return net_send_all(fd, &net_len, sizeof(net_len)) // send lenght
+            && net_send_all(fd, ct, (size_t)ct_len);       // send data
+}
+
+bool crypto_xfer_recv_chunk(i32 fd, XferStreamRx *s,
+                        u8 **out_data, u32 *out_len)
+{
+        u32 net_len;
+        if (!net_recv_all(fd, &net_len, sizeof(net_len))) return false;
+        u32 ct_len = ntohl(net_len);
+
+        if (ct_len < CRYPTO_TAG_BYTES
+         || ct_len > XFER_MAX_CHUNK + CRYPTO_TAG_BYTES) {
+                log_error("xfer recv: bad frame length %u", ct_len);
+                return false;
+        }
+
+        u8 *ct = malloc(ct_len);
+        if (!ct) {log_error("xfer recv: malloc(ct) failed");return false;}
+        if (!net_recv_all(fd, ct, ct_len)) { free(ct); return false; }
+
+        u32 pt_len = ct_len - CRYPTO_TAG_BYTES;
+        u8 *pt = malloc(pt_len > 0 ? pt_len : 1);
+        if (!pt) {
+                log_error("xfer recv: malloc(pt) failed");
+                free(ct);
+                return false;
+        }
+
+        unsigned long long actual_pt = 0;
+        u8 tag = 0;
+        int rc = crypto_secretstream_xchacha20poly1305_pull(
+                        &s->state, pt, &actual_pt, &tag,
+                        ct, ct_len, NULL, 0);
+        free(ct);
+        if (rc != 0) {
+                log_error("xfer secretstream_pull failed");
+                free(pt);
+                return false;
+        }
+
+        s->last_tag = tag;
+        *out_data = pt;
+        *out_len = (u32)actual_pt;
+        return true;
+}
+
+void crypto_xfer_close(void *stream)
+{
+        if (!stream) return;
+        sodium_memzero(stream, sizeof(XferStreamTx));
+}
+
 void crypto_session_close(CryptoSession *s)
 {
         if (!s) return;
