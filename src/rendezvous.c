@@ -90,7 +90,6 @@ static void parse_args(int argc, char **argv,
                                 continue;
                         }
                         g_room_ttl_seconds = (u32)t;
-                        log_info("Room TTL set to %d seconds", t);
                 }
                 else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "--log-level", 11)) {
                         if (i + 1 >= argc) {
@@ -173,7 +172,8 @@ int main(int argc, char **argv)
 
         i32 server_fd = init_listen_fd(port);
         if (server_fd == -1) return 1;
-        log_info("Listening on port %u (max rooms = %u)", port, max_rooms);
+        log_info("Listening on port %u (max rooms = %u, ttl = %u)",
+                        port, max_rooms, g_room_ttl_seconds);
 
         RoomTable rt;
         if (!room_table_init(&rt, max_rooms)) {
