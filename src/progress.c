@@ -2,6 +2,7 @@
 #include "../include/file_offer.h"
 #include "../include/logger.h"
 
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -18,6 +19,27 @@
 #define PROGRESS_BAR_MIN        10
 #define PROGRESS_BAR_MAX        60
 #define PROGRESS_LABEL_RESERVE  75
+
+static volatile sig_atomic_t g_resize_pending = 0;
+
+static void on_winch(int sig)
+{
+        (void)sig;
+        g_resize_pending = 1;
+}
+
+static void ensure_winch_handler(void)
+{
+        static bool installed = false;
+        if (installed) return;
+        installed = true;
+
+        struct sigaction sa = {0};
+        sa.sa_handler = on_winch;
+        sa.sa_flags   = SA_RESTART;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGWINCH, &sa, NULL);
+}
 
 static int get_term_width(void)
 {
@@ -149,6 +171,8 @@ static void draw(ProgressBar *p, struct timespec now)
 void progress_init(ProgressBar *p, const char *label,
                    u64 total_bytes, pthread_mutex_t *io_lock)
 {
+        ensure_winch_handler();
+
         memset(p, 0, sizeof(*p));
         p->label        = label;
         p->tty_width    = compute_bar_width(get_term_width());
@@ -169,6 +193,11 @@ void progress_tick(ProgressBar *p, u64 current_bytes)
 {
         p->current = current_bytes;
         if (!stdout_is_tty()) return;
+
+        if (g_resize_pending) {
+                g_resize_pending = 0;
+                p->tty_width = compute_bar_width(get_term_width());
+        }
 
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
