@@ -81,7 +81,8 @@ static ssize_t read_chunk(i32 fd, u8 *buf, size_t max)
 
 bool file_stream_send(i32 fd, CryptoSession *control,
                  const char *path, u64 expected_size,
-                 pthread_mutex_t *io_lock)
+                 pthread_mutex_t *io_lock,
+                 volatile sig_atomic_t *cancel_flag)
 {
         int src = open(path, O_RDONLY);
         if (src < 0) {
@@ -128,6 +129,13 @@ bool file_stream_send(i32 fd, CryptoSession *control,
                 }
         } else {
                 for (;;) {
+                        if (cancel_flag && *cancel_flag) {
+                                log_info("Transfer cancelled by user; sending FINAL.");
+                                crypto_xfer_send_chunk(fd, &tx, NULL, 0,
+                                        crypto_secretstream_xchacha20poly1305_TAG_FINAL);
+                                success = false;
+                                break;
+                        }
                         size_t want = sizeof(buf);
                         u64 remaining = expected_size - total_sent;
                         if ((u64)want > remaining) want = (size_t)remaining;
@@ -247,6 +255,18 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
                 if (rx.last_tag
                     == crypto_secretstream_xchacha20poly1305_TAG_FINAL)
                         break;
+        }
+        if (success) {
+                if (total_recv < offer->size) {
+                        log_info("Transfer ended early (got %llu / %llu bytes); "
+                                 "discarding partial.",
+                                 (unsigned long long)total_recv,
+                                 (unsigned long long)offer->size);
+                        close(dst);
+                        unlink(partial);
+                        crypto_xfer_close(&rx);
+                        return false;
+                }
         }
 
         crypto_xfer_close(&rx);

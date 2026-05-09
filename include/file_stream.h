@@ -5,6 +5,7 @@
 #include "file_offer.h"
 #include "typedefs.h"
 
+#include <signal.h>
 #include <stdbool.h>
 #include <pthread.h>
 
@@ -25,7 +26,8 @@
  */
 bool file_stream_send(i32 fd, CryptoSession *control,
                       const char *path, u64 expected_size,
-                      pthread_mutex_t *io_lock);
+                      pthread_mutex_t *io_lock,
+                      volatile sig_atomic_t *cancel_flag);
 
 /*
  * Receiver side. Reads MSG_TRANSFER_HEADER from the control stream
