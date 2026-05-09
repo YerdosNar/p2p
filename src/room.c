@@ -158,7 +158,7 @@ bool room_claim(RoomTable       *rt,
                 char err[60]; // Magic number
                 snprintf(err, sizeof(err), "Attempt %u: from %s:%u",
                          r->failed_attemtps, client_ip, client_port);
-                crypto_send_typed(r->host_fd, PROTO_ERROR,
+                crypto_send_typed(r->host_fd, PROTO_WARN,
                                  (const u8 *)err, sizeof(err),
                                  &r->host_session);
                 if (exhausted) {
