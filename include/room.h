@@ -95,6 +95,8 @@ bool room_claim(RoomTable       *rt,
                 i32             *out_host_fd,
                 u8              out_host_pubkey[CRYPTO_PUBKEYB],
                 CryptoSession   *out_host_session,
+                const char      *client_ip,
+                u16             client_port,
                 const char      **err_msg);
 
 /*
