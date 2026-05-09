@@ -39,6 +39,12 @@ static CryptoSession  *g_session = NULL;
 /* Names for UI */
 static char           g_peer_name[34], g_my_name[34];
 
+/*
+ * Set by the SIGINT handler when XFER_ACTIVE. Read by file_stream_send
+ * between chunks. volatile sig_atomic_t per POSIX rules for sig handlers.
+ */
+static volatile sig_atomic_t g_xfer_cancel = 0;
+
 /* FUntion prototype */
 static bool handle_incoming_response(const char *line, size_t len);
 static bool handle_send_command(const char *path);
@@ -83,6 +89,11 @@ static void restore_termios(void)
 static void on_signal(int sig)
 {
         (void)sig;
+        if (g_xfer_mode == XFER_ACTIVE) {
+                g_xfer_cancel = 1;
+                return;
+        }
+
         restore_termios();
         const char msg[] = "\nInterrupted.\n";
         ssize_t _ = write(STDERR_FILENO, msg, sizeof(msg) - 1);
@@ -299,14 +310,19 @@ static void *recv_thread(void *arg)
                         io_write_str("'...\n");
                         pthread_mutex_unlock(&g_io_lock);
 
-                        bool ok = file_stream_send(g_fd, g_session,
-                                                   path, size, &g_io_lock);
+                        bool ok = file_stream_send(g_fd, g_session, path, size,
+                                                   &g_io_lock, &g_xfer_cancel);
+                        bool was_cancelled = (g_xfer_cancel != 0);
+                        g_xfer_cancel = 0;
 
                         pthread_mutex_lock(&g_input_lock);
                         g_xfer_mode = XFER_IDLE;
                         pthread_mutex_lock(&g_io_lock);
-                        redraw_status(ok ? "Transfer complete."
-                                        : "Transfer failed.");
+                        const char *status;
+                        if (ok)                 status = "Transfer complete";
+                        else if (was_cancelled) status = "Transfer cancelled";
+                        else                    status = "Transfer failed";
+                        redraw_status(status);
                         pthread_mutex_unlock(&g_io_lock);
                         pthread_mutex_unlock(&g_input_lock);
                         continue;
@@ -330,12 +346,13 @@ static void *recv_thread(void *arg)
                                                    &g_io_lock);
                         free(data);
 
+                        const char *status = ok ? "Transfer complete."
+                                                : "Transfer cancelled by sender.";
                         pthread_mutex_lock(&g_input_lock);
                         g_xfer_mode = XFER_IDLE;
                         memset(&g_incoming_offer, 0, sizeof(g_incoming_offer));
                         pthread_mutex_lock(&g_io_lock);
-                        redraw_status(ok ? "Transfer complete."
-                                         : "Transfer failed.");
+                        redraw_status(status);
                         pthread_mutex_unlock(&g_io_lock);
                         pthread_mutex_unlock(&g_input_lock);
                         continue;
