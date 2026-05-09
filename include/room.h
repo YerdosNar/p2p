@@ -15,10 +15,11 @@
  *
  * Limits (final-form values; extend later as needed):
  */
-#define ROOM_ID_MAX      32
-#define ROOM_PW_MAX      32
-#define ROOM_DEFAULT_MAX 5000
-#define ROOM_TTL_DEFAULT 300
+#define ROOM_ID_MAX              32
+#define ROOM_PW_MAX              32
+#define ROOM_DEFAULT_MAX         5000
+#define ROOM_TTL_DEFAULT         300
+#define ROOM_MAX_FAILED_ATTEMPTS 5
 
 extern u32 g_room_ttl_seconds;
 /*
@@ -35,6 +36,7 @@ typedef struct {
         u8              host_pubkey[CRYPTO_PUBKEYB];
         CryptoSession   host_session;
         time_t          created_at;
+        u8              failed_attemtps;
         bool            is_active;
 } Room;
 

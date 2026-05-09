@@ -140,6 +140,22 @@ bool room_claim(RoomTable       *rt,
                                  stored_len) == 0);
 
         if (!ok) {
+                r->failed_attemtps++;
+                bool exhausted = (r->failed_attemtps >= ROOM_MAX_FAILED_ATTEMPTS);
+
+                if (exhausted) {
+                        log_warn("Room '%s' exceeded %d failed attempts; "
+                                 "killing it (host will be disconnected).",
+                                 r->room_id, ROOM_MAX_FAILED_ATTEMPTS);
+                        close(r->host_fd);
+                        sodium_memzero(r->password, sizeof(r->password));
+                        sodium_memzero(&r->host_session, sizeof(r->host_session));
+                        r->is_active = false;
+                } else {
+                        log_debug("claim: bad password for '%s' (%u/%u)",
+                                  id, r->failed_attemtps, ROOM_MAX_FAILED_ATTEMPTS);
+                }
+
                 pthread_mutex_unlock(&rt->lock);
                 log_debug("claim: bad password for '%s'", id);
                 *err_msg = "Authentication failed";
