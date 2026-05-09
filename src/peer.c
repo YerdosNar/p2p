@@ -17,6 +17,7 @@
 #include "../include/room.h"
 #include "../include/holepunch.h"
 #include "../include/chat.h"
+#include "../include/noninteractive.h"
 
 #define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_PORT 8888
@@ -28,6 +29,12 @@ typedef struct {
         char            role;
         const char      *id;
         const char      *password;
+
+        bool            noninteractive;
+        const char      *send_file_path;
+        const char      *expect_file_path;
+        bool            ping;
+        bool            pong;
 } Args;
 
 static void usage(const char *exe)
@@ -99,6 +106,21 @@ static bool parse_args(int argc, char **argv, Args *a)
                         LogLevel lvl;
                         if (logger_parse_level(argv[++i], &lvl))
                                 logger_set_level(lvl);
+                }
+                else if (!strcmp(argv[i], "--noninteractive")) {
+                        a->noninteractive = true;
+                }
+                else if (!strcmp(argv[i], "--send-file") && i + 1 < argc) {
+                        a->send_file_path = argv[++i];
+                }
+                else if (!strcmp(argv[i], "--expect-file") && i + 1 < argc) {
+                        a->expect_file_path= argv[++i];
+                }
+                else if (!strcmp(argv[i], "--ping")) {
+                        a->ping = true;
+                }
+                else if (!strcmp(argv[i], "--pong")) {
+                        a->pong = true;
                 }
                 else {
                         log_error("Unknown argument: %s", argv[i]);
@@ -282,15 +304,22 @@ static bool name_exchange(
         }
         if (type != MSG_NAME) {
                 log_error("Peer sent unexpected type: type=0x%02x", type);
+                free(name_payload);
                 return false;
         }
-        if (len <= 0 || len >= 32) {
+        if (len == 0) {
+                log_error("Peer sent empty name");
+                free(name_payload);
+                return false;
+        }
+        if (len >= 32) {
                 log_warn("Name is longer than the buffer: "
                          "Will be truncated");
                 len = 32;
         }
         memcpy(out_peer_name, (const char*)name_payload, len);
         out_peer_name[len] = '\0';
+        free(name_payload);
 
         return true;
 }
@@ -368,6 +397,7 @@ int main(int argc, char **argv)
          * This proves we're talking to the peer whose fingerprint we
          * trust - not the rendezvous server, not a nework attacker.
          */
+        bool p2p_ok = false;
         if (!check_fingerprint(p2p_fd, &p2p)) {
                 log_error("check_fingerprint failed");
                 goto p2p_done;
@@ -376,28 +406,45 @@ int main(int argc, char **argv)
         // Exchange names
         char my_name[32];
         char peer_name[32];
-        printf("Enter your name: ");
-        fgets(my_name, sizeof(my_name) - 1, stdin);
-        net_strip_newline(my_name);
-        if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
-                log_error("name_exchange failed");
-                goto p2p_done;
+        if (args.noninteractive) {
+                if (args.role == 'H') snprintf(my_name, sizeof(my_name), "Host");
+                else                  snprintf(my_name, sizeof(my_name), "Join");
+
+                if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
+                        log_error("name_exchange failed");
+                        goto p2p_done;
+                }
+                if (!noninteractive_run(p2p_fd, &p2p,
+                                args.send_file_path,
+                                args.expect_file_path,
+                                args.ping, args.pong)) {
+                        log_error("noninteractive_run failed");
+                        goto p2p_done;
+                }
+                p2p_ok = true;
+        } else {
+                printf("Enter your name: ");
+                fgets(my_name, sizeof(my_name) - 1, stdin);
+                net_strip_newline(my_name);
+                if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
+                        log_error("name_exchange failed");
+                        goto p2p_done;
+                }
+                log_info("=== P2P Channel established ===");
+                log_info("    Peer fingerprint: %s", peer_fp);
+                log_info("    Peer name       : %s", peer_name);
+                log_info("    Verify this matches what the other side sees as");
+                log_info("    THEIR peer's fingerprint, via your shared channel");
+
+                chat_run(p2p_fd, &p2p, peer_fp,
+                         (const char*)peer_name,
+                         (const char*)my_name);
+                p2p_ok = true;
         }
-
-        log_info("=== P2P Channel established ===");
-        log_info("    Peer fingerprint: %s", peer_fp);
-        log_info("    Peer name       : %s", peer_name);
-        log_info("    Verify this matches what the other side sees as");
-        log_info("    THEIR peer's fingerprint, via your shared channel");
-
-        chat_run(p2p_fd, &p2p, peer_fp,
-                 (const char*)peer_name,
-                 (const char*)my_name);
-        goto p2p_done;
 
 p2p_done:
         crypto_session_close(&p2p);
         close(p2p_fd);
         identity_close(&me);
-        return ok ? 0 : 1;
+        return p2p_ok ? 0 : 1;
 }
