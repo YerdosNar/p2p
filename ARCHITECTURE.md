@@ -239,7 +239,6 @@ paths. Stack buffers holding key material use `sodium_memzero`.
 - Persistent message history (intentionally — no on-disk storage of chat)
 - Out-of-order chunks (transfer is strictly sequential)
 - Resumable transfers (a killed transfer starts over)
-- Mid-transfer cancellation (deferred — see feat/file-cancel)
 
 ## Testing strategy
 

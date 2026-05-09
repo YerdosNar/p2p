@@ -15,6 +15,7 @@ to each other; it cannot decrypt or read any traffic.
 - Authenticated handshake (resists man-in-the-middle by the rendezvous)
 - Live file transfers with progress, resume-on-collision, ETA
 - Forward secrecy: past sessions remain confidential if long-term keys leak
+- Mid-transfer cancellation: Ctrl-C aborts transfer without ending the chat
 
 ## Building
 
