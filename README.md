@@ -99,6 +99,9 @@ OpenP2P provides:
 - Forward secrecy — past sessions stay private even if your long-term key
   later leaks
 - The rendezvous server cannot decrypt traffic between peers
+- Limited brute-force protection: rooms are killed after 5 wrong
+  password attempts. Attackers can still mount distributed attacks
+  by retrying with new room IDs, but the per-room budget is small.
 
 OpenP2P does **not** protect against:
 
@@ -108,7 +111,6 @@ OpenP2P does **not** protect against:
 - Compromise of either peer's machine
 - Traffic analysis (an observer can see *that* two peers are communicating,
   even though they cannot read what they say)
-- Brute-force attacks on weak room passwords against a colluding rendezvous
 
 This is a hobby project, not a hardened communication tool. For threats above
 "casual eavesdropping," use Signal.
