@@ -7,6 +7,15 @@
 
 u32 g_room_ttl_seconds = ROOM_TTL_DEFAULT;
 
+static void room_kill_unlocked(Room *r, const char *reason)
+{
+        log_info("Killing room '%s': %s", r->room_id, reason);
+        close(r->host_fd);
+        sodium_memzero(r->password, sizeof(r->password));
+        sodium_memzero(&r->host_session, sizeof(r->host_session));
+        r->is_active = false;
+}
+
 static int find_free_slot(const RoomTable *rt)
 {
         for (u32 i = 0; i < rt->capacity; i++) {
@@ -144,20 +153,13 @@ bool room_claim(RoomTable       *rt,
                 bool exhausted = (r->failed_attemtps >= ROOM_MAX_FAILED_ATTEMPTS);
 
                 if (exhausted) {
-                        log_warn("Room '%s' exceeded %d failed attempts; "
-                                 "killing it (host will be disconnected).",
-                                 r->room_id, ROOM_MAX_FAILED_ATTEMPTS);
-                        close(r->host_fd);
-                        sodium_memzero(r->password, sizeof(r->password));
-                        sodium_memzero(&r->host_session, sizeof(r->host_session));
-                        r->is_active = false;
+                        room_kill_unlocked(r, "exceeded password attempts");
                 } else {
                         log_debug("claim: bad password for '%s' (%u/%u)",
                                   id, r->failed_attemtps, ROOM_MAX_FAILED_ATTEMPTS);
                 }
 
                 pthread_mutex_unlock(&rt->lock);
-                log_debug("claim: bad password for '%s'", id);
                 *err_msg = "Authentication failed";
                 return false;
         }
@@ -180,19 +182,14 @@ u32 room_sweep_expired(RoomTable *rt)
 {
         time_t now = time(NULL);
         u32 swept = 0;
-
         pthread_mutex_lock(&rt->lock);
 
         for (u32 i = 0; i < rt->capacity; i++) {
                 Room *r = &rt->rooms[i];
                 if (!r->is_active) continue;
                 if (now - r->created_at < g_room_ttl_seconds) continue;
-                log_info("Sweeping expired room '%s' (slot %u)",
-                         r->room_id, i);
-                close(r->host_fd);
-                sodium_memzero(r->password, sizeof(r->password));
-                sodium_memzero(&r->host_session, sizeof(r->host_session));
-                r->is_active = false;
+
+                room_kill_unlocked(r, "expired");
                 swept++;
         }
 
