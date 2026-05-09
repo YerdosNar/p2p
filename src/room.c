@@ -1,5 +1,6 @@
 #include "../include/room.h"
 #include "../include/logger.h"
+#include "../include/msgtype.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -128,6 +129,8 @@ bool room_claim(RoomTable       *rt,
                 i32             *out_host_fd,
                 u8              out_host_pubkey[CRYPTO_PUBKEYB],
                 CryptoSession   *out_host_session,
+                const char      *client_ip,
+                u16             client_port,
                 const char      **err_msg)
 {
         pthread_mutex_lock(&rt->lock);
@@ -152,11 +155,18 @@ bool room_claim(RoomTable       *rt,
                 r->failed_attemtps++;
                 bool exhausted = (r->failed_attemtps >= ROOM_MAX_FAILED_ATTEMPTS);
 
+                char err[60]; // Magic number
+                snprintf(err, sizeof(err), "Attempt %u: from %s:%u",
+                         r->failed_attemtps, client_ip, client_port);
+                crypto_send_typed(r->host_fd, PROTO_ERROR,
+                                 (const u8 *)err, sizeof(err),
+                                 &r->host_session);
                 if (exhausted) {
                         room_kill_unlocked(r, "exceeded password attempts");
                 } else {
                         log_debug("claim: bad password for '%s' (%u/%u)",
-                                  id, r->failed_attemtps, ROOM_MAX_FAILED_ATTEMPTS);
+                                  id, r->failed_attemtps,
+                                  ROOM_MAX_FAILED_ATTEMPTS);
                 }
 
                 pthread_mutex_unlock(&rt->lock);

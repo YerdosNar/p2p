@@ -16,7 +16,8 @@ static void send_error_and_close(i32 fd, CryptoSession *s, const char *msg)
 {
         log_warn("Protocol error: %s", msg);
         crypto_send_typed(fd, PROTO_ERROR,
-                         (const u8 *)msg, (u32)strlen(msg), s);
+                         (const u8 *)msg,
+                         (u32)strlen(msg), s);
         close(fd);
 }
 
@@ -229,7 +230,8 @@ static void handle_joiner(
 
         if (!room_claim(rt, id, pw,
                         host_ip, &host_port, &host_fd,
-                        host_pubkey, &host_session, &err)) {
+                        host_pubkey, &host_session,
+                        client_ip, client_port, &err)) {
                 send_error_and_close(fd, session, err);
                 return;
         }
