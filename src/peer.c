@@ -18,11 +18,12 @@
 #include "../include/holepunch.h"
 #include "../include/chat.h"
 
-#define DEFAULT_RENDEZVOUS_IP   "127.0.0.1"
-#define DEFAULT_RENDEZVOUS_PORT 8888
+#define DEFAULT_RENDEZVOUS_IP           "127.0.0.1"
+#define DEFAULT_RENDEZVOUS_DNAME        "localhost"
+#define DEFAULT_RENDEZVOUS_PORT         8888
 
 typedef struct {
-        const char      *rendezvous_ip;
+        char            rendezvous_ip[INET_ADDRSTRLEN];
         u16             rendezvous_port;
         const char      *identity_path;
         char            role;
@@ -41,6 +42,8 @@ static void usage(const char *exe)
                ROOM_PW_MAX);
         printf("  -i, --rendezvous-ip <ip>    Rendezvous server IP (default %s)\n",
                DEFAULT_RENDEZVOUS_IP);
+        printf("  -d, --domain <domain>       Rendezvous server domain name (default %s)\n",
+               DEFAULT_RENDEZVOUS_DNAME);
         printf("  -p, --rendezvous-port <p>   Rendezvous server port (default %d)\n",
                DEFAULT_RENDEZVOUS_PORT);
         printf("  --identity <path>           Override identity file location\n");
@@ -51,7 +54,8 @@ static void usage(const char *exe)
 static bool parse_args(int argc, char **argv, Args *a)
 {
         memset(a, 0, sizeof(*a));
-        a->rendezvous_ip   = DEFAULT_RENDEZVOUS_IP;
+        strncpy(a->rendezvous_ip, DEFAULT_RENDEZVOUS_IP, INET_ADDRSTRLEN-1);
+        a->rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
         a->rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
 
         for (int i = 1; i < argc; i++) {
@@ -84,7 +88,18 @@ static bool parse_args(int argc, char **argv, Args *a)
                 else if ((!strncmp(argv[i], "-i", 2)
                                 || !strcmp(argv[i], "--rendezvous-ip"))
                                 && i + 1 < argc) {
-                        a->rendezvous_ip = argv[++i];
+                        strncpy(a->rendezvous_ip, argv[++i], INET_ADDRSTRLEN-1);
+                        a->rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
+                }
+                else if ((!strncmp(argv[i], "-d", 2)
+                                || !strncmp(argv[i], "--domain", 8))
+                                && i + 1 < argc) {
+                        const char *dom = argv[++i];
+                        if (!net_resolve_domain(dom, a->rendezvous_ip)) {
+                                return false;
+                        }
+                        log_info("Resolved '%s' -> %s",
+                                 dom, a->rendezvous_ip);
                 }
                 else if ((!strncmp(argv[i], "-p", 2)
                                 || !strcmp(argv[i], "--rendezvous-port"))

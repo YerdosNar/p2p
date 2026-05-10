@@ -8,6 +8,33 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+
+bool net_resolve_domain(const char *domain, char *out_ip)
+{
+        struct addrinfo hints = {0};
+        hints.ai_family         = AF_INET;
+        hints.ai_socktype       = SOCK_STREAM;
+
+        struct addrinfo *res = NULL;
+        int rc = getaddrinfo(domain, NULL, &hints, &res);
+
+        if (rc != 0) {
+                log_error("Cannot resolve '%s': %s", domain, gai_strerror(rc));
+                return false;
+        }
+        struct sockaddr_in *sa = (struct sockaddr_in *)res->ai_addr;
+        const char *ok = inet_ntop(AF_INET, &sa->sin_addr,
+                                   out_ip, INET_ADDRSTRLEN);
+        freeaddrinfo(res);
+
+        if (!ok) {
+                log_error("inet_ntop failed for '%s'", domain);
+                return false;
+        }
+        return true;
+}
 
 bool net_recv_all(int fd, void *buf, size_t len)
 {

@@ -15,6 +15,15 @@
  */
 
 /*
+ * Get domain name and get IPv4 address
+ *
+ * out_ip must point to at least INET_ADDRSTRLEN bytes.
+ * On success: writes a NUL-terminated dotted-quad string, returns true.
+ * On failure: (NXDOMAIN, no IPv4 records, lookup error): logs and returns false.
+ */
+bool net_resolve_domain(const char *domain, char *out_ip);
+
+/*
  * Receive exactly 'len' bytes into 'buf', looping over short reads.
  *
  * Returns true if the full buffer was filled.
