@@ -199,6 +199,7 @@ static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
         }
         while (type == PROTO_WARN) {
                 log_warn("Rendezvous warning: %.*s", (int)plen, payload);
+                free(payload); payload=NULL;
                 if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
                         log_error("Connection lost before match");
                         return false;

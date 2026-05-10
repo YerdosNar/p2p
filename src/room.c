@@ -152,25 +152,28 @@ bool room_claim(RoomTable       *rt,
                                  stored_len) == 0);
 
         if (!ok) {
-                r->failed_attemtps++;
-                bool exhausted = (r->failed_attemtps >= ROOM_MAX_FAILED_ATTEMPTS);
+                r->failed_attempts++;
+                bool exhausted = (r->failed_attempts >= ROOM_MAX_FAILED_ATTEMPTS);
 
                 char err[45]; // Magic number
                               // 19base_str + 1num + 15IP + 5PORT + \0
                               // 40 ~ 45 just in case
-                snprintf(err, sizeof(err), "Attempt %u: from %s:%u",
-                         r->failed_attemtps, client_ip, client_port);
+                int n = snprintf(err, sizeof(err), "Attempt %u: from %s:%u",
+                                 r->failed_attempts, client_ip, client_port);
+                if (n < 0) n = 0;
+                if ((size_t)n >= sizeof(err)) n = sizeof(err) - 1;
                 crypto_send_typed(r->host_fd, PROTO_WARN,
-                                 (const u8 *)err, sizeof(err),
+                                 (const u8 *)err, (u32)n,
                                  &r->host_session);
                 if (exhausted) {
                         crypto_send_typed(r->host_fd, PROTO_ERROR,
-                                         (const u8 *)"Closing", 8,
+                                         (const u8 *)"Closing",
+                                         (u32)strlen("Closing"),
                                          &r->host_session);
                         room_kill_unlocked(r, "exceeded password attempts");
                 } else {
                         log_debug("claim: bad password for '%s' (%u/%u)",
-                                  id, r->failed_attemtps,
+                                  id, r->failed_attempts,
                                   ROOM_MAX_FAILED_ATTEMPTS);
                 }
 

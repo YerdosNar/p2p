@@ -36,7 +36,7 @@ typedef struct {
         u8              host_pubkey[CRYPTO_PUBKEYB];
         CryptoSession   host_session;
         time_t          created_at;
-        u8              failed_attemtps;
+        u8              failed_attempts;
         bool            is_active;
 } Room;
 
