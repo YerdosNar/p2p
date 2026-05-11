@@ -133,6 +133,13 @@ bool room_claim(RoomTable       *rt,
                 u16             client_port,
                 const char      **err_msg)
 {
+        bool    need_warn = false;
+        bool    need_kill_msg = false;
+        i32     warn_fd = -1;
+        CryptoSession warn_session;
+        char    warn_msg[64];
+        u32     warn_msg_len = 0;
+
         pthread_mutex_lock(&rt->lock);
 
         Room *r = find_by_id(rt, id);
@@ -155,21 +162,19 @@ bool room_claim(RoomTable       *rt,
                 r->failed_attempts++;
                 bool exhausted = (r->failed_attempts >= ROOM_MAX_FAILED_ATTEMPTS);
 
-                char err[45]; // Magic number
-                              // 19base_str + 1num + 15IP + 5PORT + \0
-                              // 40 ~ 45 just in case
-                int n = snprintf(err, sizeof(err), "Attempt %u: from %s:%u",
+                int n = snprintf(warn_msg, sizeof(warn_msg),
+                                 "Attempt %u: from %s:%u",
                                  r->failed_attempts, client_ip, client_port);
                 if (n < 0) n = 0;
-                if ((size_t)n >= sizeof(err)) n = sizeof(err) - 1;
-                crypto_send_typed(r->host_fd, PROTO_WARN,
-                                 (const u8 *)err, (u32)n,
-                                 &r->host_session);
+                if ((size_t)n >= sizeof(warn_msg)) n = (int)sizeof(warn_msg) - 1;
+                warn_msg_len = (u32)n;
+
+                need_warn       = true;
+                need_kill_msg   = exhausted;
+                warn_fd         = r->host_fd;
+                warn_session    = r->host_session;
+
                 if (exhausted) {
-                        crypto_send_typed(r->host_fd, PROTO_ERROR,
-                                         (const u8 *)"Closing",
-                                         (u32)strlen("Closing"),
-                                         &r->host_session);
                         room_kill_unlocked(r, "exceeded password attempts");
                 } else {
                         log_debug("claim: bad password for '%s' (%u/%u)",
@@ -178,6 +183,20 @@ bool room_claim(RoomTable       *rt,
                 }
 
                 pthread_mutex_unlock(&rt->lock);
+                if (need_warn) {
+                        crypto_send_typed(warn_fd, PROTO_WARN,
+                                          (const u8 *)warn_msg, warn_msg_len,
+                                          &warn_session);
+                }
+                if (need_kill_msg) {
+                        const char *closing = "Closing...";
+                        crypto_send_typed(warn_fd, PROTO_ERROR,
+                                          (const u8 *)closing,
+                                          (u32)strlen(closing),
+                                          &warn_session);
+                }
+                sodium_memzero(&warn_session, sizeof(warn_session));
+
                 *err_msg = "Authentication failed";
                 return false;
         }
