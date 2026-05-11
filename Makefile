@@ -41,7 +41,8 @@ PEER_SRC := \
 	src/chat.c \
 	src/file_offer.c \
 	src/file_stream.c \
-	src/progress.c
+	src/progress.c \
+	src/proxy.c
 
 # ── object file paths ─────────────────────────────────────────────────
 # Mirror source layout under build/. e.g. src/crypto.c -> build/src/crypto.o
@@ -84,6 +85,7 @@ build/%.o: %.c
 
 build/src/logger.o:     include/logger.h
 build/src/net.o:        include/logger.h    include/typedefs.h                   include/net.h
+build/src/proxy.o: 	include/logger.h    include/typedefs.h  include/proxy.h
 build/src/crypto.o:     include/logger.h    include/typedefs.h  include/crypto.h include/net.h
 build/src/room.o:       include/logger.h    include/typedefs.h  include/crypto.h include/room.h
 build/src/protocol.o:   include/logger.h    include/typedefs.h  include/crypto.h include/room.h   include/protocol.h  include/msgtype.h
