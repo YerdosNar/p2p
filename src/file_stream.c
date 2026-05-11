@@ -131,8 +131,11 @@ bool file_stream_send(i32 fd, CryptoSession *control,
                 for (;;) {
                         if (cancel_flag && *cancel_flag) {
                                 log_info("Transfer cancelled by user; sending FINAL.");
-                                crypto_xfer_send_chunk(fd, &tx, NULL, 0,
-                                        crypto_secretstream_xchacha20poly1305_TAG_FINAL);
+                                if (!crypto_xfer_send_chunk(fd, &tx, NULL, 0,
+                                        crypto_secretstream_xchacha20poly1305_TAG_FINAL)) {
+                                        log_debug("Cancel FINAL send failed "
+                                                  "(peer likely gone).");
+                                }
                                 success = false;
                                 break;
                         }
@@ -256,17 +259,15 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
                     == crypto_secretstream_xchacha20poly1305_TAG_FINAL)
                         break;
         }
-        if (success) {
-                if (total_recv < offer->size) {
-                        log_info("Transfer ended early (got %llu / %llu bytes); "
-                                 "discarding partial.",
-                                 (unsigned long long)total_recv,
-                                 (unsigned long long)offer->size);
-                        close(dst);
-                        unlink(partial);
-                        crypto_xfer_close(&rx);
-                        return false;
-                }
+        if (success && total_recv < offer->size) {
+                log_info("Transfer ended early (got %llu / %llu bytes); "
+                         "discarding partial.",
+                         (unsigned long long)total_recv,
+                         (unsigned long long)offer->size);
+                close(dst);
+                unlink(partial);
+                crypto_xfer_close(&rx);
+                return false;
         }
 
         crypto_xfer_close(&rx);
@@ -278,9 +279,8 @@ bool file_stream_recv(i32 fd, CryptoSession *control,
         if (!success) {
                 unlink(partial);
                 return false;
-        } else {
-                progress_done(&pb);
         }
+        progress_done(&pb);
 
         if (total_recv != offer->size) {
                 log_warn("Received %llu bytes, offer claimed %llu",

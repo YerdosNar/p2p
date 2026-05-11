@@ -45,6 +45,15 @@ static char           g_peer_name[34], g_my_name[34];
  */
 static volatile sig_atomic_t g_xfer_cancel = 0;
 
+/*
+ * Mirror of g_xfer_mode for the signal handler to read safely.
+ * Reading a non-sig_atomic variable from a signal handler is UB per
+ * POSIX, even though plain int reads are atomic on every machine
+ * anyone uses. Updated alongside g_xfer_mode in handle_send_command
+ * and recv_thread.
+ */
+static volatile sig_atomic_t g_xfer_active = 0;
+
 /* FUntion prototype */
 static bool handle_incoming_response(const char *line, size_t len);
 static bool handle_send_command(const char *path);
@@ -85,11 +94,15 @@ static void restore_termios(void)
  * POSIX. write() is safe. _exit avoids atexit handlers (not all of
  * which are safe). We don't try to send MSG_BYE -- crypto_send_typed
  * is not signal-safe.
+ *
+ * During an active transfer, SIGINT cancels the transfer instead
+ * of exiting. The user can still kill the process from another
+ * terminal if they really want out.
  */
 static void on_signal(int sig)
 {
         (void)sig;
-        if (g_xfer_mode == XFER_ACTIVE) {
+        if (g_xfer_active) {
                 g_xfer_cancel = 1;
                 return;
         }
@@ -301,6 +314,7 @@ static void *recv_thread(void *arg)
                         name[sizeof(name) - 1] = '\0';
                         u64 size = g_outgoing_size;
                         g_xfer_mode = XFER_ACTIVE;
+                        g_xfer_active = 1;
                         pthread_mutex_unlock(&g_input_lock);
 
                         pthread_mutex_lock(&g_io_lock);
@@ -314,6 +328,7 @@ static void *recv_thread(void *arg)
                                                    &g_io_lock, &g_xfer_cancel);
                         bool was_cancelled = (g_xfer_cancel != 0);
                         g_xfer_cancel = 0;
+                        g_xfer_active = 0;
 
                         pthread_mutex_lock(&g_input_lock);
                         g_xfer_mode = XFER_IDLE;
@@ -347,7 +362,7 @@ static void *recv_thread(void *arg)
                         free(data);
 
                         const char *status = ok ? "Transfer complete."
-                                                : "Transfer cancelled by sender.";
+                                                : "Transfer ended early or failed.";
                         pthread_mutex_lock(&g_input_lock);
                         g_xfer_mode = XFER_IDLE;
                         memset(&g_incoming_offer, 0, sizeof(g_incoming_offer));
@@ -435,6 +450,7 @@ static bool handle_incoming_response(const char *line, size_t len)
 
         pthread_mutex_lock(&g_input_lock);
         g_xfer_mode = XFER_ACTIVE;
+        g_xfer_active = 1;
         pthread_mutex_unlock(&g_input_lock);
 
         pthread_mutex_lock(&g_io_lock);
