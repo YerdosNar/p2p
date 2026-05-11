@@ -207,19 +207,19 @@ static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
         log_info("Registered as %s for room '%s'. Waiting for peer...",
                  a->role == 'H' ? "host" : "joiner", a->id);
 
-        /* 3. Wait for PEER_INFO (or PROTO_ERROR) */
-        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
-                log_error("Connection lost before match");
-                return false;
-        }
-        while (type == PROTO_WARN) {
-                log_warn("Rendezvous warning: %.*s", (int)plen, payload);
-                free(payload); payload=NULL;
+        payload = NULL;
+        for (;;) {
                 if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
                         log_error("Connection lost before match");
                         return false;
                 }
+                if (type != PROTO_WARN) break;
+
+                log_warn("Rendezvous warning: %.*s", (int)plen, payload);
+                free(payload);
+                payload = NULL;
         }
+
         if (type == PROTO_ERROR) {
                 log_error("Rendezvous error: %.*s", (int)plen, payload);
                 free(payload);
