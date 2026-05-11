@@ -168,11 +168,12 @@ static void io_write_str(const char *s) { io_write_raw(s, strlen(s)); }
  * Builds the whole thing in one stack buffer and writes once, so the
  * terminal sees it as a single atomic update.
  */
-static void redraw_with_message(const char *prefix, const char *msg, size_t msg_len)
+static void redraw_with_message(const char *peer_name, const char *msg, size_t msg_len)
 {
         /* \r return cursor to column 0, \x1b[K erase to end of line. */
         io_write_str("\r\x1b[K");
-        io_write_str(prefix);
+        io_write_str(peer_name);
+        io_write_str("> ");
         io_write_raw(msg, msg_len);
         io_write_str("\n");
         io_write_str(g_my_name);
@@ -675,7 +676,7 @@ void chat_run(i32               fd,
         g_fd         = fd;
         g_session    = session;
 
-        snprintf(g_peer_name, sizeof(g_peer_name), "%s> ", peer_name);
+        snprintf(g_peer_name, sizeof(g_peer_name), "%s", peer_name);
         snprintf(g_my_name, sizeof(g_my_name), "%s> ", my_name);
 
         if (!enter_raw_mode()) {

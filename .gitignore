@@ -60,3 +60,5 @@ test-f/
 exe_*
 *.log
 a.out
+peer
+rendezvous
