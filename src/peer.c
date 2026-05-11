@@ -17,10 +17,12 @@
 #include "../include/room.h"
 #include "../include/holepunch.h"
 #include "../include/chat.h"
+#include "../include/proxy.h"
 
 #define DEFAULT_RENDEZVOUS_IP           "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_DNAME        "localhost"
 #define DEFAULT_RENDEZVOUS_PORT         8888
+#define DEFAULT_PROXY_PORT              1080
 
 typedef struct {
         char            rendezvous_ip[INET_ADDRSTRLEN];
@@ -29,6 +31,8 @@ typedef struct {
         char            role;
         const char      *id;
         const char      *password;
+        bool            proxy;
+        u16             socks_port;
 } Args;
 
 static void usage(const char *exe)
@@ -47,6 +51,8 @@ static void usage(const char *exe)
         printf("  -p, --rendezvous-port <p>   Rendezvous server port (default %d)\n",
                DEFAULT_RENDEZVOUS_PORT);
         printf("  --identity <path>           Override identity file location\n");
+        printf("  --proxy                     Runs SOCKS5 (host=EXIT node)\n");
+        printf("  --socks-port <p>            Local SOCKS5 port for joiner (default %u)\n", DEFAULT_PROXY_PORT);
         printf("  -L, --log-level <lvl>       error|warn|info|debug (default info)\n");
         printf("  -h, --help                  Show this help\n");
 }
@@ -54,6 +60,7 @@ static void usage(const char *exe)
 static bool parse_args(int argc, char **argv, Args *a)
 {
         memset(a, 0, sizeof(*a));
+        a->socks_port = DEFAULT_PROXY_PORT;
         strncpy(a->rendezvous_ip, DEFAULT_RENDEZVOUS_IP, INET_ADDRSTRLEN-1);
         a->rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
         a->rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
@@ -101,10 +108,31 @@ static bool parse_args(int argc, char **argv, Args *a)
                         log_info("Resolved '%s' -> %s",
                                  dom, a->rendezvous_ip);
                 }
+                else if (!strncmp(argv[i], "--proxy", 7)) {
+                        a->proxy = true;
+                }
+                else if (!strcmp(argv[i], "--socks-port")
+                                && i + 1 < argc
+                                && a->role == 'J'
+                                && a->proxy) {
+                        int p = atoi(argv[++i]);
+                        if (p <= 1024 || p > 65535) {
+                                log_warn("Invalid port '%s'; using %d.",
+                                         argv[i], DEFAULT_PROXY_PORT);
+                                continue;
+                        }
+                        a->socks_port = p;
+                }
                 else if ((!strncmp(argv[i], "-p", 2)
                                 || !strcmp(argv[i], "--rendezvous-port"))
                                 && i + 1 < argc) {
-                        a->rendezvous_port = (u16)atoi(argv[++i]);
+                        int p = atoi(argv[++i]);
+                        if (p <= 1024 || p > 65535) {
+                                log_warn("Invalid port '%s'; using %d.",
+                                         argv[i], DEFAULT_RENDEZVOUS_PORT);
+                                continue;
+                        }
+                        a->rendezvous_port = p;
                 }
                 else if (!strcmp(argv[i], "--identity") && i + 1 < argc) {
                         a->identity_path = argv[++i];
@@ -413,9 +441,13 @@ int main(int argc, char **argv)
         log_info("    Verify this matches what the other side sees as");
         log_info("    THEIR peer's fingerprint, via your shared channel");
 
-        chat_run(p2p_fd, &p2p, peer_fp,
-                 (const char*)peer_name,
-                 (const char*)my_name);
+        if (args.proxy) {
+                proxy_run(p2p_fd, &p2p, args.role == 'H', args.socks_port);
+        } else {
+                chat_run(p2p_fd, &p2p, peer_fp,
+                         (const char*)peer_name,
+                         (const char*)my_name);
+        }
         goto p2p_done;
 
 p2p_done:
