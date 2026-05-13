@@ -42,12 +42,15 @@ bool stream_table_wait_open(StreamTable *st,
                         int             timeout_sec,
                         StreamState     *out_state)
 {
-        struct timespec deadline;
+        struct timespec deadline, now;
         clock_gettime(CLOCK_REALTIME, &deadline);
+        clock_gettime(CLOCK_REALTIME, &now);
         deadline.tv_sec += timeout_sec;
 
         pthread_mutex_lock(&st->lock);
-        log_debug("wait_open(%u): entering wait", id);
+        log_debug("wait_open(%u): now=%lld.%09ld, deadline=%lld.%09ld",
+                  id, (long long)now.tv_sec, now.tv_nsec,
+                  (long long)deadline.tv_sec, deadline.tv_nsec);
         for (;;) {
                 Stream *slot = NULL;
                 for (u32 i = 0; i < STREAM_TABLE_CAPACITY; i++)
@@ -127,6 +130,7 @@ bool stream_table_transition(StreamTable *st, u32 id, u32 allowed_from, StreamSt
         Stream *slot = find_slot_by_id(st, id);
         if (!slot) {
                 pthread_mutex_unlock(&st->lock);
+                return false;
         }
         if (!(allowed_from & (1u << slot->state))) {
                 log_warn("stream %u: illegal transition %d -> %d",
@@ -143,7 +147,7 @@ bool stream_table_transition(StreamTable *st, u32 id, u32 allowed_from, StreamSt
         }
         log_debug("transition(%u): %d -> %d, broadcasting",
                   id, from_state, to);
-        pthread_cond_destroy(&st->broadcast);
+        pthread_cond_broadcast(&st->broadcast);
         pthread_mutex_unlock(&st->lock);
         return true;
 }
