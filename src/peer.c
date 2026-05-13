@@ -344,6 +344,9 @@ static bool name_exchange(
         memcpy(out_peer_name, (const char*)name_payload, len);
         out_peer_name[len] = '\0';
 
+        free(name_payload);
+        name_payload = NULL;
+
         return true;
 }
 

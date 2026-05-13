@@ -13,6 +13,8 @@
  * Trust model: the host sees all of the joiner's non-TLS traffic
  * and is the apparent source IP. Only use between trusting peers.
  */
+
+#define PROXY_DATA_MAX_CHUNK    (32u * KB)
 void proxy_run(i32              fd,
                CryptoSession    *s,
                bool             is_host,
