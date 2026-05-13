@@ -47,22 +47,27 @@ bool stream_table_wait_open(StreamTable *st,
         deadline.tv_sec += timeout_sec;
 
         pthread_mutex_lock(&st->lock);
+        log_debug("wait_open(%u): entering wait", id);
         for (;;) {
                 Stream *slot = NULL;
                 for (u32 i = 0; i < STREAM_TABLE_CAPACITY; i++)
                         if (st->slots[i].id == id) {slot=&st->slots[i];break;}
                 if (!slot) {
+                        log_debug("wait_open(%u): slot gone -> DEAD", id);
                         *out_state = STREAM_DEAD;
                         pthread_mutex_unlock(&st->lock);
                         return true;
                 }
                 if (slot->state != STREAM_OPENING) {
+                        log_debug("wait_open(%u): state=%d, returning", id, slot->state);
                         *out_state = slot->state;
                         pthread_mutex_unlock(&st->lock);
                         return true;
                 }
                 int rc = pthread_cond_timedwait(&st->broadcast,
                                                 &st->lock, &deadline);
+                log_debug("wait_open(%u): cond returned rc=%d (state=%d)",
+                          id, rc, slot->state);
                 if (rc == ETIMEDOUT) {
                         pthread_mutex_unlock(&st->lock);
                         return false;
@@ -130,11 +135,14 @@ bool stream_table_transition(StreamTable *st, u32 id, u32 allowed_from, StreamSt
                 return false;
         }
 
+        StreamState from_state = slot->state;
         slot->state = to;
         if (to == STREAM_DEAD) {
                 if (slot->fd >= 0) close(slot->fd);
                 memset(slot, 0, sizeof(*slot));
         }
+        log_debug("transition(%u): %d -> %d, broadcasting",
+                  id, from_state, to);
         pthread_cond_destroy(&st->broadcast);
         pthread_mutex_unlock(&st->lock);
         return true;
