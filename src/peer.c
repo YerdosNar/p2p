@@ -514,8 +514,6 @@ int main(int argc, char **argv)
         log_info("=== P2P Channel established ===");
         log_info("    Peer fingerprint: %s", peer_fp);
         log_info("    Peer name       : %s", peer_name);
-        log_info("    Verify this matches what the other side sees as");
-        log_info("    THEIR peer's fingerprint, via your shared channel");
 
         if (args.proxy) {
                 proxy_run(p2p_fd, &p2p, args.role == 'H', args.socks_port);
