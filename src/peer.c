@@ -17,19 +17,30 @@
 #include "../include/room.h"
 #include "../include/holepunch.h"
 #include "../include/chat.h"
+#include "../include/proxy.h"
 
 #define DEFAULT_RENDEZVOUS_IP           "127.0.0.1"
 #define DEFAULT_RENDEZVOUS_DNAME        "localhost"
 #define DEFAULT_RENDEZVOUS_PORT         8888
+#define DEFAULT_PROXY_PORT              1080
 
 typedef struct {
         char            rendezvous_ip[INET_ADDRSTRLEN];
         u16             rendezvous_port;
         const char      *identity_path;
         char            role;
+        char            name[32];
         const char      *id;
         const char      *password;
+        bool            proxy;
+        u16             socks_port;
 } Args;
+
+// Globally accessible
+static Args args;
+static u8 type;
+static u8 *payload = NULL;
+static u32 plen = 0;
 
 static void usage(const char *exe)
 {
@@ -40,6 +51,7 @@ static void usage(const char *exe)
         printf("  -J, --join <id>             Join a room\n");
         printf("  -P, --password <pw>         Room password (required, max %d)\n",
                ROOM_PW_MAX);
+        printf("  -n, --name <name>           Set name at the start (default role-based)\n");
         printf("  -i, --rendezvous-ip <ip>    Rendezvous server IP (default %s)\n",
                DEFAULT_RENDEZVOUS_IP);
         printf("  -d, --domain <domain>       Rendezvous server domain name (default %s)\n",
@@ -47,16 +59,19 @@ static void usage(const char *exe)
         printf("  -p, --rendezvous-port <p>   Rendezvous server port (default %d)\n",
                DEFAULT_RENDEZVOUS_PORT);
         printf("  --identity <path>           Override identity file location\n");
+        printf("  --proxy                     Runs SOCKS5 (host=EXIT node)\n");
+        printf("  --socks-port <p>            Local SOCKS5 port for joiner (default %u)\n",
+               DEFAULT_PROXY_PORT);
         printf("  -L, --log-level <lvl>       error|warn|info|debug (default info)\n");
         printf("  -h, --help                  Show this help\n");
 }
 
-static bool parse_args(int argc, char **argv, Args *a)
+static bool parse_args(int argc, char **argv)
 {
-        memset(a, 0, sizeof(*a));
-        strncpy(a->rendezvous_ip, DEFAULT_RENDEZVOUS_IP, INET_ADDRSTRLEN-1);
-        a->rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
-        a->rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
+        args.socks_port = DEFAULT_PROXY_PORT;
+        strncpy(args.rendezvous_ip, DEFAULT_RENDEZVOUS_IP, INET_ADDRSTRLEN-1);
+        args.rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
+        args.rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
 
         for (int i = 1; i < argc; i++) {
                 if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -65,49 +80,91 @@ static bool parse_args(int argc, char **argv, Args *a)
                 else if ((!strncmp(argv[i], "-H", 2)
                                 || !strncmp(argv[i], "--host", 6))
                                 && i + 1 < argc) {
-                        if (a->role) {
+                        if (i != 1) {
+                                log_warn("%s flag should be at the very front",
+                                                argv[i]);
+                        }
+                        if (args.role) {
                                 log_error("--host and --join are mutually exclusive");
                                 return false;
                         }
-                        a->role = 'H'; a->id = argv[++i];
+                        args.role = 'H'; args.id = argv[++i];
                 }
                 else if ((!strncmp(argv[i], "-J", 2)
                                 || !strncmp(argv[i], "--join", 6))
                                 && i + 1 < argc) {
-                        if (a->role) {
+                        if (i != 1) {
+                                log_warn("%s flag should be at the very front",
+                                                argv[i]);
+                        }
+                        if (args.role) {
                                 log_error("--host and --join are mutually exclusive");
                                 return false;
                         }
-                        a->role = 'J'; a->id = argv[++i];
+                        args.role = 'J'; args.id = argv[++i];
                 }
                 else if ((!strncmp(argv[i], "-P", 2)
                                 || !strcmp(argv[i], "--password"))
                                 && i + 1 < argc) {
-                        a->password = argv[++i];
+                        args.password = argv[++i];
+                }
+                else if (!strncmp(argv[i], "-n", 2)
+                                || !strncmp(argv[i], "--name", 6)) {
+                        char *role_based_name = (args.role == 'H') ? "Host"
+                                                                  : "Join";
+                        strncpy(args.name, role_based_name, sizeof(args.name));
+                        if (i + 1 < argc) {
+                                strncpy(args.name, argv[++i], sizeof(args.name)-1);
+                                args.name[sizeof(args.name) - 1] = '\0';
+                        } else {
+                                log_warn("%s flag needs string", argv[i]);
+                        }
+                        log_info("Name: %s", args.name);
                 }
                 else if ((!strncmp(argv[i], "-i", 2)
                                 || !strcmp(argv[i], "--rendezvous-ip"))
                                 && i + 1 < argc) {
-                        strncpy(a->rendezvous_ip, argv[++i], INET_ADDRSTRLEN-1);
-                        a->rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
+                        strncpy(args.rendezvous_ip, argv[++i], INET_ADDRSTRLEN-1);
+                        args.rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
                 }
                 else if ((!strncmp(argv[i], "-d", 2)
                                 || !strncmp(argv[i], "--domain", 8))
                                 && i + 1 < argc) {
                         const char *dom = argv[++i];
-                        if (!net_resolve_domain(dom, a->rendezvous_ip)) {
+                        if (!net_resolve_domain(dom, args.rendezvous_ip)) {
                                 return false;
                         }
                         log_info("Resolved '%s' -> %s",
-                                 dom, a->rendezvous_ip);
+                                 dom, args.rendezvous_ip);
+                }
+                else if (!strcmp(argv[i], "--proxy")) {
+                        args.proxy = true;
+                }
+                else if (!strcmp(argv[i], "--socks-port")
+                                && i + 1 < argc
+                                && args.role == 'J'
+                                && args.proxy) {
+                        int p = atoi(argv[++i]);
+                        if (p <= 1024 || p > 65535) {
+                                log_warn("Invalid port '%s'; using %d.",
+                                         argv[i], DEFAULT_PROXY_PORT);
+                                continue;
+                        }
+                        args.socks_port = p;
                 }
                 else if ((!strncmp(argv[i], "-p", 2)
                                 || !strcmp(argv[i], "--rendezvous-port"))
                                 && i + 1 < argc) {
-                        a->rendezvous_port = (u16)atoi(argv[++i]);
+                        int p = atoi(argv[++i]);
+                        if (p <= 1024 || p > 65535) {
+                                log_warn("Invalid port '%s'; using %d.",
+                                         argv[i], DEFAULT_RENDEZVOUS_PORT);
+                                continue;
+                        }
+                        args.rendezvous_port = p;
                 }
                 else if (!strcmp(argv[i], "--identity") && i + 1 < argc) {
-                        a->identity_path = argv[++i];
+                        args.identity_path = argv[++i];
                 }
                 else if ((!strcmp(argv[i], "-L") || !strcmp(argv[i], "--log-level"))
                          && i + 1 < argc) {
@@ -121,15 +178,15 @@ static bool parse_args(int argc, char **argv, Args *a)
                 }
         }
 
-        if (!a->role)             { log_error("Need --host or --join"); return false; }
-        if (!a->id)               { log_error("Need room ID");          return false; }
-        if (!a->password)         { log_error("Need --password");       return false; }
-        if (strlen(a->id) == 0 || strlen(a->id) > ROOM_ID_MAX) {
+        if (!args.role)             { log_error("Need --host or --join"); return false; }
+        if (!args.id)               { log_error("Need room ID");          return false; }
+        if (!args.password)         { log_error("Need --password");       return false; }
+        if (strlen(args.id) == 0 || strlen(args.id) > ROOM_ID_MAX) {
                 log_error("Room ID must be 1..%d chars", ROOM_ID_MAX);
                 return false;
         }
-        if (strlen(a->password) == 0
-            || strlen(a->password) > ROOM_PW_MAX) {
+        if (strlen(args.password) == 0
+            || strlen(args.password) > ROOM_PW_MAX) {
                 log_error("Password must be 1..%d chars", ROOM_PW_MAX);
                 return false;
         }
@@ -175,39 +232,36 @@ static int connect_rendezvous(const char *ip, u16 port)
  * Run the rendezvous protocol from "connected" through receiving the
  * peer info. Returns true on successful match.
  */
-static bool run_rendezvous(int fd, CryptoSession *s, const Args *a,
+static bool run_rendezvous(int fd, CryptoSession *s,
                            const Identity *id,
                            char *out_peer_ip, u16 *out_peer_port,
                            u8 out_peer_pubkey[IDENTITY_PUBKEY_BYTES])
 {
         /* 1. Server sends ROLE_REQ */
-        u8 type;
-        u8 *payload = NULL;
-        u32 plen = 0;
         if (!crypto_recv_typed(fd, &type, &payload, &plen, s)
                         || type != PROTO_ROLE_REQ) {
                 log_error("Expected ROLE_REQUEST, got 0x%02x", type);
                 free(payload); return false;
         }
         free(payload);
+        payload = NULL;
 
         /* 2. Send our role, ID, password, pubkey */
         if (!crypto_send_typed(fd, PROTO_ROLE_RES,
-                               (const u8 *)&a->role, 1, s)) return false;
+                               (const u8 *)&args.role, 1, s)) return false;
         if (!crypto_send_typed(fd, PROTO_ROOM_ID,
-                               (const u8 *)a->id,
-                               (u32)strlen(a->id), s)) return false;
+                               (const u8 *)args.id,
+                               (u32)strlen(args.id), s)) return false;
         if (!crypto_send_typed(fd, PROTO_ROOM_PASSWORD,
-                               (const u8 *)a->password,
-                               (u32)strlen(a->password), s)) return false;
+                               (const u8 *)args.password,
+                               (u32)strlen(args.password), s)) return false;
         if (!crypto_send_typed(fd, PROTO_PUBKEY,
                                id->pubkey,
                                IDENTITY_PUBKEY_BYTES, s)) return false;
 
         log_info("Registered as %s for room '%s'. Waiting for peer...",
-                 a->role == 'H' ? "host" : "joiner", a->id);
+                 args.role == 'H' ? "host" : "joiner", args.id);
 
-        payload = NULL;
         for (;;) {
                 if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
                         log_error("Connection lost before match");
@@ -285,21 +339,17 @@ static bool check_fingerprint(i32 fd, CryptoSession *s)
 
 static bool name_exchange(
                 i32             fd,
-                char            *my_name,
                 char            *out_peer_name,
                 CryptoSession   *s)
 {
         if (!crypto_send_typed(fd, MSG_NAME,
-                                (const u8 *)my_name,
-                                (u32)strlen(my_name), s)) {
+                                (const u8 *)args.name,
+                                (u32)strlen(args.name), s)) {
                 log_error("Failed to send our my_name");
                 return false;
         }
 
-        u8 type;
-        u32 len;
-        u8 *name_payload = NULL;
-        if (!crypto_recv_typed(fd, &type, &name_payload, &len, s)) {
+        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
                 log_error("Failed to recv peer name");
                 return false;
         }
@@ -307,21 +357,65 @@ static bool name_exchange(
                 log_error("Peer sent unexpected type: type=0x%02x", type);
                 return false;
         }
-        if (len <= 0 || len >= 32) {
+        if (plen == 0) {
+                log_error("Empty name");
+        }
+        if (plen > 31) {
                 log_warn("Name is longer than the buffer: "
                          "Will be truncated");
-                len = 32;
+                plen = 31;
         }
-        memcpy(out_peer_name, (const char*)name_payload, len);
-        out_peer_name[len] = '\0';
+        memcpy(out_peer_name, (const char*)payload, plen);
+        out_peer_name[plen] = '\0';
 
+        free(payload);
+        payload = NULL;
+
+        return true;
+}
+
+static bool mode_agree(i32 fd, CryptoSession *s)
+{
+        u8 my_mode = args.proxy ? 'P' : 'C';
+        if (!crypto_send_typed(fd, MSG_MODE, &my_mode, 1, s)) {
+                log_error("Failed to send mode");
+                return false;
+        }
+
+        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
+                log_error("Failed to recv peer mode");
+                return false;
+        }
+        if (type != MSG_MODE || plen != 1) {
+                log_error("Expected MSG_MODE (plen 1), got 0x%02x (plen %u)",
+                          type, plen);
+                free(payload);
+                return false;
+        }
+
+        u8 peer_mode = payload[0];
+        free(payload);
+
+        if (peer_mode != 'C' && peer_mode != 'P') {
+                log_error("Peer sent unknown mode byte 0x%02x", peer_mode);
+                return false;
+        }
+
+        if (peer_mode != my_mode) {
+                log_error("Mode mismatch: we want '%s', peer wants '%s'. "
+                          "Both sides must pass (or omit) --proxy",
+                          (my_mode == 'C') ? "CHAT" : "PROXY",
+                          (peer_mode == 'C') ? "CHAT" : "PROXY");
+                return false;
+        }
+        log_info("Mode agreed %s", args.proxy ? "PROXY" : "CHAT");
         return true;
 }
 
 int main(int argc, char **argv)
 {
-        Args args;
-        if (!parse_args(argc, argv, &args)) {
+        memset(&args, 0, sizeof(Args));
+        if (!parse_args(argc, argv)) {
                 fprintf(stderr, "\n");
                 usage(argv[0]);
                 return 1;
@@ -348,7 +442,7 @@ int main(int argc, char **argv)
         u16  peer_port;
         u8   peer_pubkey[IDENTITY_PUBKEY_BYTES];
 
-        bool ok = run_rendezvous(fd, &s, &args, &me,
+        bool ok = run_rendezvous(fd, &s, &me,
                                  peer_ip, &peer_port, peer_pubkey);
 
         crypto_session_close(&s);
@@ -396,26 +490,38 @@ int main(int argc, char **argv)
                 goto p2p_done;
         }
 
+        printf("After checking fingerprint press \033[33mENTER\033[0m\n");
+        getchar();
+
+        if (!mode_agree(p2p_fd, &p2p)) {
+                log_error("Mode agreement failed");
+                goto p2p_done;
+        }
+
         // Exchange names
-        char my_name[32];
+        if (args.name[0] == '\0') {
+                printf("Enter your name: ");
+                fgets(args.name, sizeof(args.name), stdin);
+                net_strip_newline(args.name);
+        }
         char peer_name[32];
-        printf("Enter your name: ");
-        fgets(my_name, sizeof(my_name) - 1, stdin);
-        net_strip_newline(my_name);
-        if (!name_exchange(p2p_fd, my_name, peer_name, &p2p)) {
+        if (!name_exchange(p2p_fd, peer_name, &p2p)) {
                 log_error("name_exchange failed");
                 goto p2p_done;
         }
 
+        system("clear");
         log_info("=== P2P Channel established ===");
         log_info("    Peer fingerprint: %s", peer_fp);
         log_info("    Peer name       : %s", peer_name);
-        log_info("    Verify this matches what the other side sees as");
-        log_info("    THEIR peer's fingerprint, via your shared channel");
 
-        chat_run(p2p_fd, &p2p, peer_fp,
-                 (const char*)peer_name,
-                 (const char*)my_name);
+        if (args.proxy) {
+                proxy_run(p2p_fd, &p2p, args.role == 'H', args.socks_port);
+        } else {
+                chat_run(p2p_fd, &p2p, peer_fp,
+                         (const char*)peer_name,
+                         (const char*)args.name);
+        }
         goto p2p_done;
 
 p2p_done:

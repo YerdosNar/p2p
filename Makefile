@@ -41,7 +41,9 @@ PEER_SRC := \
 	src/chat.c \
 	src/file_offer.c \
 	src/file_stream.c \
-	src/progress.c
+	src/progress.c \
+	src/proxy.c \
+	src/stream_table.c
 
 # ── object file paths ─────────────────────────────────────────────────
 # Mirror source layout under build/. e.g. src/crypto.c -> build/src/crypto.o
@@ -82,21 +84,23 @@ build/%.o: %.c
 
 # ── header dependencies ───────────────────────────────────────────────
 
-build/src/logger.o:     include/logger.h
-build/src/net.o:        include/logger.h    include/typedefs.h                   include/net.h
-build/src/crypto.o:     include/logger.h    include/typedefs.h  include/crypto.h include/net.h
-build/src/room.o:       include/logger.h    include/typedefs.h  include/crypto.h include/room.h
-build/src/protocol.o:   include/logger.h    include/typedefs.h  include/crypto.h include/room.h   include/protocol.h  include/msgtype.h
-build/src/rendezvous.o: include/logger.h    include/typedefs.h  include/crypto.h include/room.h   include/protocol.h  include/net.h
-build/src/identity.o:   include/logger.h    include/typedefs.h  include/identity.h
-build/src/holepunch.o:  include/logger.h    include/typedefs.h  include/holepunch.h include/net.h
-build/src/chat.o: 	include/logger.h    include/typedefs.h  include/crypto.h include/chat.h   include/msgtype.h include/file_offer.h include/file_stream.h
-build/src/file_offer.o: include/logger.h    include/typedefs.h  include/file_offer.h
-build/src/file_stream.o:include/logger.h    include/typedefs.h  include/crypto.h include/file_stream.h include/file_offer.h include/msgtype.h
-build/src/progress.o:   include/progress.h  include/typedefs.h
-build/src/peer.o:       include/logger.h    include/typedefs.h  include/crypto.h \
-                        include/msgtype.h   include/identity.h  include/room.h \
-                        include/holepunch.h include/net.h
+build/src/logger.o:       include/logger.h
+build/src/net.o:          include/logger.h    include/typedefs.h                   include/net.h
+build/src/stream_table.o: include/logger.h    include/typedefs.h  include/stream_table.h
+build/src/crypto.o:       include/logger.h    include/typedefs.h  include/crypto.h include/net.h
+build/src/room.o:         include/logger.h    include/typedefs.h  include/crypto.h include/room.h
+build/src/protocol.o:     include/logger.h    include/typedefs.h  include/crypto.h include/room.h   include/protocol.h  include/msgtype.h
+build/src/rendezvous.o:   include/logger.h    include/typedefs.h  include/crypto.h include/room.h   include/protocol.h  include/net.h
+build/src/identity.o:     include/logger.h    include/typedefs.h  include/identity.h
+build/src/holepunch.o:    include/logger.h    include/typedefs.h  include/holepunch.h include/net.h
+build/src/chat.o: 	  include/logger.h    include/typedefs.h  include/crypto.h include/chat.h   include/msgtype.h include/file_offer.h include/file_stream.h
+build/src/file_offer.o:   include/logger.h    include/typedefs.h  include/file_offer.h
+build/src/file_stream.o:  include/logger.h    include/typedefs.h  include/crypto.h include/file_stream.h include/file_offer.h include/msgtype.h
+build/src/proxy.o: 	  include/logger.h    include/typedefs.h  include/crypto.h include/net.h    include/msgtype.h include/stream_table.h include/proxy.h
+build/src/progress.o:     include/progress.h  include/typedefs.h
+build/src/peer.o:         include/logger.h    include/typedefs.h  include/crypto.h \
+                          include/msgtype.h   include/identity.h  include/room.h \
+                          include/holepunch.h include/net.h
 
 # ── cleanup ───────────────────────────────────────────────────────────
 
