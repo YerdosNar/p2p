@@ -510,6 +510,7 @@ int main(int argc, char **argv)
                 goto p2p_done;
         }
 
+        system("clear");
         log_info("=== P2P Channel established ===");
         log_info("    Peer fingerprint: %s", peer_fp);
         log_info("    Peer name       : %s", peer_name);
