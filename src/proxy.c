@@ -122,11 +122,7 @@ static bool send_close(ProxyCtx *ctx, u32 stream_id)
  */
 static void local_tx_done(ProxyCtx *ctx, u32 id)
 {
-        if (stream_table_transition(&ctx->table, id,
-                                    (1u << STREAM_OPEN), STREAM_HALF_TX))
-                return;
-        stream_table_transition(&ctx->table, id,
-                                (1u << STREAM_HALF_RX), STREAM_DEAD);
+        stream_table_close_half(&ctx->table, id, true);
 }
 
 /*
@@ -135,11 +131,7 @@ static void local_tx_done(ProxyCtx *ctx, u32 id)
  */
 static void peer_tx_done(ProxyCtx *ctx, u32 id)
 {
-        if (stream_table_transition(&ctx->table, id,
-                                    (1u << STREAM_OPEN), STREAM_HALF_RX))
-                return;
-        stream_table_transition(&ctx->table, id,
-                                (1u << STREAM_HALF_TX), STREAM_DEAD);
+        stream_table_close_half(&ctx->table, id, false);
 }
 
 /* ────────────────────────────────────────────────────────────────── */

@@ -94,6 +94,20 @@ bool stream_table_transition(StreamTable *st,
                              StreamState to);
 
 /*
+ * Close one direction of a stream. we_finished_sending' is true if
+ * if the caller is the one that just sent CLOSE (or whose pump finished).
+ * Returns the new state (HALF_TX, HALF_RX, or DEAD).
+ *
+ * Atomic with respect to the other side's close attempt: if both
+ * directions finish concurrently, exactly one caller observes the
+ * stream becoming DEAD.
+ */
+StreamState stream_table_close_half(
+                StreamTable     *st,
+                u32             id,
+                bool            we_finished_sending);
+
+/*
  * Close all streams. Used at shutdown. Each fd is closed and slots
  * are zeroed.
  */

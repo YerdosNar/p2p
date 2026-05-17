@@ -152,6 +152,44 @@ bool stream_table_transition(StreamTable *st, u32 id, u32 allowed_from, StreamSt
         return true;
 }
 
+StreamState stream_table_close_half(
+                StreamTable     *st,
+                u32             id,
+                bool            we_finished_sending)
+{
+        pthread_mutex_lock(&st->lock);
+        Stream *slot = find_slot_by_id(st, id);
+        if (!slot) {
+                pthread_mutex_unlock(&st->lock);
+                return STREAM_DEAD;
+        }
+
+        StreamState from = slot->state;
+        StreamState to;
+
+        if (we_finished_sending) {
+                if      (from == STREAM_OPEN)    to = STREAM_HALF_TX;
+                else if (from == STREAM_HALF_RX) to = STREAM_DEAD;
+                else                             to = from;
+        } else {
+                if      (from == STREAM_OPEN)    to = STREAM_HALF_RX;
+                else if (from == STREAM_HALF_TX) to = STREAM_DEAD;
+                else                             to = from;
+        }
+
+        if (to != from) {
+                slot->state = to;
+                if (to == STREAM_DEAD) {
+                        if (slot->fd >= 0) close (slot->fd);
+                        memset(slot, 0, sizeof(*slot));
+                }
+                log_debug("close_half(%u): %d -> %d", id, from, to);
+                pthread_cond_broadcast(&st->broadcast);
+        }
+        pthread_mutex_unlock(&st->lock);
+        return to;
+}
+
 void stream_table_close_all(StreamTable *st)
 {
         pthread_mutex_lock(&st->lock);
