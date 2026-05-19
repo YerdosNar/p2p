@@ -38,9 +38,6 @@ typedef struct {
 
 // Globally accessible
 static Args args;
-static u8 type;
-static u8 *payload = NULL;
-static u32 plen = 0;
 
 static void usage(const char *exe)
 {
@@ -237,6 +234,9 @@ static bool run_rendezvous(int fd, CryptoSession *s,
                            char *out_peer_ip, u16 *out_peer_port,
                            u8 out_peer_pubkey[IDENTITY_PUBKEY_BYTES])
 {
+        u8 type;
+        u8 *payload = NULL;
+        u32 plen;
         /* 1. Server sends ROLE_REQ */
         if (!crypto_recv_typed(fd, &type, &payload, &plen, s)
                         || type != PROTO_ROLE_REQ) {
@@ -349,7 +349,10 @@ static bool name_exchange(
                 return false;
         }
 
-        if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
+        u8 type;
+        u8 *name_payload = NULL;
+        u32 len;
+        if (!crypto_recv_typed(fd, &type, &name_payload, &len, s)) {
                 log_error("Failed to recv peer name");
                 return false;
         }
@@ -357,19 +360,19 @@ static bool name_exchange(
                 log_error("Peer sent unexpected type: type=0x%02x", type);
                 return false;
         }
-        if (plen == 0) {
+        if (len == 0) {
                 log_error("Empty name");
         }
-        if (plen > 31) {
+        if (len > 31) {
                 log_warn("Name is longer than the buffer: "
                          "Will be truncated");
-                plen = 31;
+                len = 31;
         }
-        memcpy(out_peer_name, (const char*)payload, plen);
-        out_peer_name[plen] = '\0';
+        memcpy(out_peer_name, (const char*)name_payload, len);
+        out_peer_name[len] = '\0';
 
-        free(payload);
-        payload = NULL;
+        free(name_payload);
+        name_payload = NULL;
 
         return true;
 }
@@ -382,6 +385,9 @@ static bool mode_agree(i32 fd, CryptoSession *s)
                 return false;
         }
 
+        u8 type;
+        u8 *payload;
+        u32 plen;
         if (!crypto_recv_typed(fd, &type, &payload, &plen, s)) {
                 log_error("Failed to recv peer mode");
                 return false;

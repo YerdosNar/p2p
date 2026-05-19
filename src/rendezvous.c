@@ -150,7 +150,8 @@ static void *client_thread(void *arg)
                   ctx->client_ip, ctx->client_port);
 
         protocol_handle_client(ctx->client_fd,
-                               ctx->client_ip, ctx->client_port,
+                               ctx->client_ip,
+                               ctx->client_port,
                                &s, ctx->rt);
 
         /*
