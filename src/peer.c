@@ -496,9 +496,6 @@ int main(int argc, char **argv)
                 goto p2p_done;
         }
 
-        printf("After checking fingerprint press \033[33mENTER\033[0m\n");
-        getchar();
-
         if (!mode_agree(p2p_fd, &p2p)) {
                 log_error("Mode agreement failed");
                 goto p2p_done;
@@ -516,7 +513,7 @@ int main(int argc, char **argv)
                 goto p2p_done;
         }
 
-        system("clear");
+        printf("\033[2J\033[H");
         log_info("=== P2P Channel established ===");
         log_info("    Peer fingerprint: %s", peer_fp);
         log_info("    Peer name       : %s", peer_name);
