@@ -1,4 +1,3 @@
-(Une contruction)
 # OpenP2P
 
 End-to-end encrypted peer-to-peer chat and file transfer over the public
