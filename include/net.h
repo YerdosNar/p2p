@@ -44,7 +44,8 @@ bool net_send_all(int fd, const void *buf, size_t len);
 /*
  * Create a TCP socket bound to *local_addr with SO_REUSEADDR + SO_REUSEPORT.
  *
- * SO_REUSEPORT is essential for the peer side: hole-punching reuses the same local port for the rendezvous connection and the inbound P2P
+ * SO_REUSEPORT is essential for the peer side: hole-punching reuses the
+ * same local port for the rendezvous connection and the inbound P2P
  * connection from the other peer. The rendezvous side technically only
  * needs SO_REUSEADDR, but set both for symmetry.
  *
