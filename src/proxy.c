@@ -484,7 +484,7 @@ static int connect_with_timeout(const struct sockaddr_storage *sa,
                 return -1;
         }
 
-        int rc = connect(fd, (const struct sockaddr *)sa, sizeof(*sa));
+        int rc = connect(fd, (const struct sockaddr *)sa, sa_len);
         if (rc == 0) goto good;
         if (errno != EINPROGRESS) { close(fd); return -1; }
 
