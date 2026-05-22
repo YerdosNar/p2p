@@ -536,7 +536,8 @@ int main(int argc, char **argv)
                  peer_ip, peer_port, peer_family, peer_fp);
 
         // Hole punch, close rendezvous_fd
-        i32 p2p_fd = holepunch_to_peer(fd, peer_ip, peer_port);
+        i32 p2p_fd = holepunch_to_peer(fd, peer_ip, peer_port,
+                                       peer_family, rendezvous_family);
         if (p2p_fd < 0) {
                 log_error("Hole-punch failed - peer unreachable.");
                 identity_close(&me);
