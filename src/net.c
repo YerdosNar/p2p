@@ -84,9 +84,10 @@ bool net_send_all(int fd, const void *buf, size_t len)
         return true;
 }
 
-int net_make_bound_socket(const struct sockaddr_in *local_addr)
+int net_make_bound_socket(const struct sockaddr *local_addr,
+                          socklen_t addr_len)
 {
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        int fd = socket(local_addr->sa_family, SOCK_STREAM, 0);
         if (fd == -1) {
                 log_error("socket(): %s", strerror(errno));
                 return -1;
@@ -107,8 +108,7 @@ int net_make_bound_socket(const struct sockaddr_in *local_addr)
         }
 #endif
 
-        if (bind(fd, (const struct sockaddr *)local_addr,
-                                sizeof(*local_addr)) == -1) {
+        if (bind(fd, local_addr, addr_len) == -1) {
                 log_error("bind(): %s", strerror(errno));
                 close(fd);
                 return -1;

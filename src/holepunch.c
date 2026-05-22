@@ -38,7 +38,7 @@ static int open_listen(uint16_t local_port)
         sa.sin_addr.s_addr = htonl(INADDR_ANY);
         sa.sin_port        = htons(local_port);
 
-        int fd = net_make_bound_socket(&sa);
+        i32 fd = net_make_bound_socket((const struct sockaddr *)&sa, sizeof(sa));
         if (fd == -1) return -1;
         if (listen(fd, 1) == -1) {
                 log_error("listen(): %s", strerror(errno));
@@ -66,7 +66,7 @@ static int open_connect(uint16_t local_port,
         sa.sin_addr.s_addr = htonl(INADDR_ANY);
         sa.sin_port        = htons(local_port);
 
-        int fd = net_make_bound_socket(&sa);
+        i32 fd = net_make_bound_socket((const struct sockaddr *)&sa, sizeof(sa));
         if (fd == -1) return -1;
         if (!set_nonblocking(fd)) {
                 close(fd);

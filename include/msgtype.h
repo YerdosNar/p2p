@@ -45,12 +45,13 @@ typedef enum {
 /*
  * PROTO_PEER_INFO payload:
  *
+ *   [ family: 1 byte  (4 = IPv4, 6 = IPv6) ]
  *   [ ip_len: 1 byte                       ]
  *   [ ip:     ip_len bytes (ASCII, no NUL) ]
  *   [ port:   2 bytes, network order       ]
  *   [pubkey:  crypto_kx_PUBLICKEYBYTES (32)]
  *
- * Total: 1 + ip_len + 2 + 32 bytes.
+ * Total: 2 + ip_len + 2 + 32 bytes.
  *
  * ip is human-readable ("192.168.1.5", "10.0.0.1"). Length-prefixed
  * because IPv6 may be implemented later; keeping it variable makes
