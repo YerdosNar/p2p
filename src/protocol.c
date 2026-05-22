@@ -34,15 +34,17 @@ static bool send_peer_info(
 {
         size_t ip_len = strlen(peer_ip);
         if (ip_len > 0xff) {
-                /* INET_ADDRSTRLEN is 16, but the length-prefix is one byte
-                 * and we want to be honest */
                 log_error("peer_ip too long for length-prefix encoding");
                 return false;
         }
 
-        u8 buf[1 + 0xff + 2 + CRYPTO_PUBKEYB];
+        // Funny way: if there is a colon, then it is IPv6
+        u8 family = (strchr(peer_ip, ':') != NULL) ? 6 : 4;
+
+        u8 buf[1 + 1 + 0xff + 2 + CRYPTO_PUBKEYB];
         size_t pos = 0;
 
+        buf[pos++] = family;
         buf[pos++] = (u8)ip_len;
         memcpy(buf + pos, peer_ip, ip_len);
         pos += ip_len;
@@ -165,7 +167,7 @@ static void handle_host(
 
 static void handle_joiner(
                 i32             fd,
-                const char      *client_ip,
+                const char      client_ip[INET6_ADDRSTRLEN],
                 u16             client_port,
                 CryptoSession   *session,
                 RoomTable       *rt)
@@ -221,7 +223,7 @@ static void handle_joiner(
         free(pk_payload);
 
         /* Atomically claim the room */
-        char    host_ip[INET_ADDRSTRLEN];
+        char    host_ip[INET6_ADDRSTRLEN];
         u16     host_port;
         i32     host_fd;
         u8      host_pubkey[CRYPTO_PUBKEYB];

@@ -30,7 +30,7 @@ extern u32 g_room_ttl_seconds;
 typedef struct {
         char            room_id[ROOM_ID_MAX + 1];
         char            password[ROOM_PW_MAX + 1];
-        char            host_ip[INET_ADDRSTRLEN];
+        char            host_ip[INET6_ADDRSTRLEN];
         u16             host_port;
         i32             host_fd;
         u8              host_pubkey[CRYPTO_PUBKEYB];

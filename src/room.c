@@ -184,8 +184,8 @@ bool room_claim(RoomTable       *rt,
                 return false;
         }
 
-        strncpy(out_host_ip, r->host_ip, INET_ADDRSTRLEN - 1);
-        out_host_ip[INET_ADDRSTRLEN - 1] = '\0';
+        strncpy(out_host_ip, r->host_ip, INET6_ADDRSTRLEN - 1);
+        out_host_ip[INET6_ADDRSTRLEN - 1] = '\0';
         *out_host_port  = r->host_port;
         *out_host_fd    = r->host_fd;
         memcpy(out_host_pubkey, r->host_pubkey, CRYPTO_PUBKEYB);

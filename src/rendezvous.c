@@ -22,7 +22,7 @@
 
 typedef struct {
         i32             client_fd;
-        char            client_ip[INET_ADDRSTRLEN];
+        char            client_ip[INET6_ADDRSTRLEN];
         u16             client_port;
         RoomTable       *rt;
 } ClientCtx;
@@ -115,12 +115,42 @@ static void parse_args(int argc, char **argv,
 
 static i32 init_listen_fd(u16 port)
 {
-        struct sockaddr_in sa = {0};
-        sa.sin_family         = AF_INET;
-        sa.sin_addr.s_addr    = htonl(INADDR_ANY);
-        sa.sin_port           = htons(port);
-        int fd = net_make_bound_socket(&sa);
-        if (fd == -1) return -1;
+        i32 fd = socket(AF_INET6, SOCK_STREAM, 0);
+        if (fd == -1) {
+                log_error("socket(AF_INET6): %s", strerror(errno));
+                return -1;
+        }
+
+        int opt = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+                       &opt, sizeof(opt)) == -1) {
+                log_error("setsockopt(SO_REUSEADDR): %s", strerror(errno));
+                close(fd);
+                return -1;
+        }
+#ifdef SO_REUSEPORT
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT,
+                       &opt, sizeof(opt)) == -1) {
+                log_warn("setsockopt(SO_REUSEPORT): %s", strerror(errno));
+        }
+#endif
+        int v6only = 0;
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                       &v6only, sizeof(v6only)) == -1) {
+                log_warn("setsockopt(IPV6_V6ONLY=0): %s; "
+                         "IPv4 connections may not be accepted",
+                         strerror(errno));
+        }
+
+        struct sockaddr_in6 sa = {0};
+        sa.sin6_family         = AF_INET6;
+        sa.sin6_addr           = in6addr_any;
+        sa.sin6_port           = htons(port);
+        if (bind(fd, (const struct sockaddr *)&sa, sizeof(sa)) == -1) {
+                log_error("bind(): %s", strerror(errno));
+                close(fd);
+                return -1;
+        }
         if (listen(fd, LISTEN_BACKLOG) == -1) {
                 log_error("listen(): %s", strerror(errno));
                 close(fd);
@@ -189,7 +219,7 @@ int main(int argc, char **argv)
                         log_info("Swept %u expired room(s)", swept);
                 }
 
-                struct sockaddr_in ca;
+                struct sockaddr_storage ca;
                 socklen_t ca_len = sizeof(ca);
                 i32 client_fd = accept(server_fd,
                                        (struct sockaddr *)&ca, &ca_len);
@@ -205,10 +235,33 @@ int main(int argc, char **argv)
                         continue;
                 }
                 ctx->client_fd   = client_fd;
-                ctx->client_port = ntohs(ca.sin_port);
                 ctx->rt          = &rt;
-                inet_ntop(AF_INET, &ca.sin_addr,
-                          ctx->client_ip, sizeof(ctx->client_ip));
+
+                if (ca.ss_family == AF_INET6) {
+                        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&ca;
+                        ctx->client_port = ntohs(sa6->sin6_port);
+                        if (IN6_IS_ADDR_V4MAPPED(&sa6->sin6_addr)) {
+                                struct in_addr v4;
+                                memcpy(&v4, &sa6->sin6_addr.s6_addr[12], 4);
+                                inet_ntop(AF_INET, &v4,
+                                          ctx->client_ip,
+                                          sizeof(ctx->client_ip));
+                        } else {
+                                inet_ntop(AF_INET6, &sa6->sin6_addr,
+                                          ctx->client_ip,
+                                          sizeof(ctx->client_ip));
+                        }
+                } else if (ca.ss_family == AF_INET) {
+                        struct sockaddr_in *sa4 = (struct sockaddr_in *)&ca;
+                        ctx->client_port = ntohs(sa4->sin_port);
+                        inet_ntop(AF_INET, &sa4->sin_addr,
+                                  ctx->client_ip, sizeof(ctx->client_ip));
+                } else {
+                        log_warn("accept(): Unknown address family %d", ca.ss_family);
+                        close(client_fd);
+                        free(ctx);
+                        continue;
+                }
 
                 pthread_t tid;
                 if (pthread_create(&tid, NULL, client_thread, ctx) != 0) {

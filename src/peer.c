@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <errno.h>
+#include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -25,7 +26,7 @@
 #define DEFAULT_PROXY_PORT              1080
 
 typedef struct {
-        char            rendezvous_ip[INET_ADDRSTRLEN];
+        char            rendezvous_host[256];
         u16             rendezvous_port;
         const char      *identity_path;
         char            role;
@@ -49,10 +50,9 @@ static void usage(const char *exe)
         printf("  -P, --password <pw>         Room password (required, max %d)\n",
                ROOM_PW_MAX);
         printf("  -n, --name <name>           Set name at the start (default role-based)\n");
-        printf("  -i, --rendezvous-ip <ip>    Rendezvous server IP (default %s)\n",
-               DEFAULT_RENDEZVOUS_IP);
-        printf("  -d, --domain <domain>       Rendezvous server domain name (default %s)\n",
-               DEFAULT_RENDEZVOUS_DNAME);
+        printf("  -r, --rendezvous            Rendezvous server host or IP (default %s)\n", DEFAULT_RENDEZVOUS_IP);
+        printf("  -i, --rendezvous-ip <ip>    Deprecated alias for --rendezvous\n");
+        printf("  -d, --domain <domain>       Deprecated alias for --rendezvous\n");
         printf("  -p, --rendezvous-port <p>   Rendezvous server port (default %d)\n",
                DEFAULT_RENDEZVOUS_PORT);
         printf("  --identity <path>           Override identity file location\n");
@@ -66,8 +66,10 @@ static void usage(const char *exe)
 static bool parse_args(int argc, char **argv)
 {
         args.socks_port = DEFAULT_PROXY_PORT;
-        strncpy(args.rendezvous_ip, DEFAULT_RENDEZVOUS_IP, INET_ADDRSTRLEN-1);
-        args.rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
+        strncpy(args.rendezvous_host,
+                DEFAULT_RENDEZVOUS_IP,
+                sizeof(args.rendezvous_host) - 1);
+        args.rendezvous_host[INET_ADDRSTRLEN-1] = '\0';
         args.rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
 
         for (int i = 1; i < argc; i++) {
@@ -118,21 +120,30 @@ static bool parse_args(int argc, char **argv)
                         }
                         log_info("Name: %s", args.name);
                 }
+                else if ((!strncmp(argv[i], "-r", 2)
+                                || !strcmp(argv[i], "--rendezvous"))
+                                && i + 1 < argc) {
+                        strncpy(args.rendezvous_host, argv[++i],
+                                sizeof(args.rendezvous_host) - 1);
+                        args.rendezvous_host[sizeof(args.rendezvous_host) - 1] = '\0';
+                }
                 else if ((!strncmp(argv[i], "-i", 2)
                                 || !strcmp(argv[i], "--rendezvous-ip"))
                                 && i + 1 < argc) {
-                        strncpy(args.rendezvous_ip, argv[++i], INET_ADDRSTRLEN-1);
-                        args.rendezvous_ip[INET_ADDRSTRLEN-1] = '\0';
+                        log_warn("--rendezvous-ip is deprecated; "
+                                 "use --rendezvous");
+                        strncpy(args.rendezvous_host, argv[++i],
+                                sizeof(args.rendezvous_host) - 1);
+                        args.rendezvous_host[sizeof(args.rendezvous_host) - 1] = '\0';
                 }
                 else if ((!strncmp(argv[i], "-d", 2)
                                 || !strncmp(argv[i], "--domain", 8))
                                 && i + 1 < argc) {
-                        const char *dom = argv[++i];
-                        if (!net_resolve_domain(dom, args.rendezvous_ip)) {
-                                return false;
-                        }
-                        log_info("Resolved '%s' -> %s",
-                                 dom, args.rendezvous_ip);
+                        log_warn("--domain is deprecated;"
+                                 "use --rendezvous");
+                        strncpy(args.rendezvous_host, argv[++i],
+                                sizeof(args.rendezvous_host) - 1);
+                        args.rendezvous_host[sizeof(args.rendezvous_host) - 1] = '\0';
                 }
                 else if (!strcmp(argv[i], "--proxy")) {
                         args.proxy = true;
@@ -191,38 +202,83 @@ static bool parse_args(int argc, char **argv)
 }
 
 /*
- * Connect to rendezvous on a SO_REUSEPORT-bound local socket.
+ * Connect to the rendezvous. 'host' may be an IPv4 literal, IPv6
+ * literal, or hostname. Tries all addresses returned by getaddrinfo
+ * in order.
  *
- * Local port is 0 (kernel-chosen ephemeral). The kernel picks one
- * port for our outgoing connection; that same port becomes the one
- * we report to rendezvous, and (next branch) the one we'll listen
- * on for the incoming peer connection.
+ * On success: returns fd and writes the resolved family to *out_family.
+ * On failure: returns -1.
  */
-static int connect_rendezvous(const char *ip, u16 port)
+static int connect_rendezvous(const char *host, u16 port, u8 *out_family)
 {
-        struct sockaddr_in local = {0};
-        local.sin_family      = AF_INET;
-        local.sin_addr.s_addr = htonl(INADDR_ANY);
-        local.sin_port        = 0;
+        struct addrinfo hints = {0};
+        hints.ai_family   = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags    = AI_ADDRCONFIG;
 
-        i32 fd = net_make_bound_socket(&local);
-        if (fd == -1) return -1;
+        char portstr[8];
+        snprintf(portstr, sizeof(portstr), "%u", port);
 
-        struct sockaddr_in remote = {0};
-        remote.sin_family = AF_INET;
-        remote.sin_port   = htons(port);
-        if (inet_pton(AF_INET, ip, &remote.sin_addr) != 1) {
-                log_error("Bad rendezvous IP: %s", ip);
-                close(fd);
+        struct addrinfo *res = NULL;
+        int rc = getaddrinfo(host, portstr, &hints, &res);
+        if (rc != 0 || !res) {
+                log_error("getaddrinfo(%s): %s", host, gai_strerror(rc));
                 return -1;
         }
 
-        if (connect(fd, (struct sockaddr *)&remote, sizeof(remote)) == -1) {
-                log_error("connect(%s:%u): %s", ip, port, strerror(errno));
+        i32 fd = -1;
+        for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
+                struct sockaddr_storage local = {0};
+                socklen_t local_len = 0;
+                if (ai->ai_family == AF_INET) {
+                        struct sockaddr_in *sa  = (struct sockaddr_in *)&local;
+                        sa->sin_family          = AF_INET;
+                        sa->sin_addr.s_addr     = htonl(INADDR_ANY);
+                        sa->sin_port            = 0;
+                        local_len               = sizeof(*sa);
+                } else if (ai->ai_family == AF_INET6) {
+                        struct sockaddr_in6 *sa = (struct sockaddr_in6 *)&local;
+                        sa->sin6_family         = AF_INET6;
+                        sa->sin6_addr           = in6addr_any;
+                        sa->sin6_port           = 0;
+                        local_len               = sizeof(*sa);
+                } else {
+                        continue;
+                }
+
+                fd = net_make_bound_socket((const struct sockaddr *)&local,
+                                           local_len);
+                if (fd < 0) continue;
+
+                if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) {
+                        char ipstr[INET6_ADDRSTRLEN] = {0};
+                        if (ai->ai_family == AF_INET) {
+                                struct sockaddr_in *sa = (struct sockaddr_in *)
+                                                         ai->ai_addr;
+                                inet_ntop(AF_INET, &sa->sin_addr,
+                                          ipstr, sizeof(ipstr));
+                                *out_family = 4;
+                        } else {
+                                struct sockaddr_in6 *sa = (struct sockaddr_in6 *)
+                                                          ai->ai_addr;
+                                inet_ntop(AF_INET6, &sa->sin6_addr,
+                                          ipstr, sizeof(ipstr));
+                                *out_family = 6;
+                        }
+                        log_info("Connected to rendezvous %s (IPv%u)",
+                                        ipstr, *out_family);
+                        freeaddrinfo(res);
+                        return fd;
+                }
+
+                log_debug("connect to one address failed: %s", strerror(errno));
                 close(fd);
-                return -1;
+                fd = -1;
         }
-        return fd;
+
+        freeaddrinfo(res);
+        log_error("All rendezvous adresses failed for '%s'", host);
+        return -1;
 }
 
 /*
@@ -232,6 +288,7 @@ static int connect_rendezvous(const char *ip, u16 port)
 static bool run_rendezvous(int fd, CryptoSession *s,
                            const Identity *id,
                            char *out_peer_ip, u16 *out_peer_port,
+                           u8 *out_peer_family,
                            u8 out_peer_pubkey[IDENTITY_PUBKEY_BYTES])
 {
         u8 type;
@@ -285,22 +342,31 @@ static bool run_rendezvous(int fd, CryptoSession *s,
                 return false;
         }
 
-        /* Parse [ip_len:1][ip][port:2][pubkey:32] */
-        if (plen < 1) { free(payload); return false; }
-        u8 ip_len = payload[0];
-        u32 expected = 1u + ip_len + 2u + IDENTITY_PUBKEY_BYTES;
-        if (plen != expected || ip_len >= INET_ADDRSTRLEN) {
+        /* Parse [family:1][ip_len:1][ip][port:2][pubkey:32] */
+        if (plen < 2) { free(payload); return false; }
+        u8 family = payload[0];
+        u8 ip_len = payload[1];
+        u32 expected = 2u + ip_len + 2u + IDENTITY_PUBKEY_BYTES;
+        if (plen != expected || ip_len >= INET6_ADDRSTRLEN) {
                 log_error("Malformed PEER_INFO");
                 free(payload);
                 return false;
         }
+        if (family != 4 && family != 6) {
+                log_error("PEER_INFO: unknown family %u", family);
+                free(payload);
+                return false;
+        }
 
-        memcpy(out_peer_ip, payload + 1, ip_len);
+        memcpy(out_peer_ip, payload + 2, ip_len);
         out_peer_ip[ip_len] = '\0';
         u16 port_n;
-        memcpy(&port_n, payload + 1 + ip_len, 2);
+        memcpy(&port_n, payload + 2 + ip_len, 2);
         *out_peer_port = ntohs(port_n);
-        memcpy(out_peer_pubkey, payload + 1 + ip_len + 2, IDENTITY_PUBKEY_BYTES);
+        memcpy(out_peer_pubkey,
+               payload + 2 + ip_len + 2,
+               IDENTITY_PUBKEY_BYTES);
+        *out_peer_family = family;
 
         free(payload);
         return true;
@@ -434,7 +500,10 @@ int main(int argc, char **argv)
         identity_fingerprint(me.pubkey, fp);
         log_info("My fingerprint: %s", fp);
 
-        i32 fd = connect_rendezvous(args.rendezvous_ip, args.rendezvous_port);
+        u8 rendezvous_family;
+        i32 fd = connect_rendezvous(args.rendezvous_host,
+                                    args.rendezvous_port,
+                                    &rendezvous_family);
         if (fd == -1) { identity_close(&me); return 1; }
 
         CryptoSession s;
@@ -444,12 +513,15 @@ int main(int argc, char **argv)
         }
         log_debug("Encrypted channel to rendezvous established");
 
-        char peer_ip[INET_ADDRSTRLEN];
+        char peer_ip[INET6_ADDRSTRLEN];
         u16  peer_port;
+        u8   peer_family;
         u8   peer_pubkey[IDENTITY_PUBKEY_BYTES];
 
         bool ok = run_rendezvous(fd, &s, &me,
-                                 peer_ip, &peer_port, peer_pubkey);
+                                 peer_ip, &peer_port,
+                                 &peer_family,
+                                 peer_pubkey);
 
         crypto_session_close(&s);
 
@@ -460,11 +532,12 @@ int main(int argc, char **argv)
 
         char peer_fp[IDENTITY_FINGERPRINT_BYTES];
         identity_fingerprint(peer_pubkey, peer_fp);
-        log_info("Matched! peer=%s:%u  fingerprint=%s",
-                 peer_ip, peer_port, peer_fp);
+        log_info("Matched! peer=%s:%u (IPv%u) fingerprint=%s",
+                 peer_ip, peer_port, peer_family, peer_fp);
 
         // Hole punch, close rendezvous_fd
-        i32 p2p_fd = holepunch_to_peer(fd, peer_ip, peer_port);
+        i32 p2p_fd = holepunch_to_peer(fd, peer_ip, peer_port,
+                                       peer_family, rendezvous_family);
         if (p2p_fd < 0) {
                 log_error("Hole-punch failed - peer unreachable.");
                 identity_close(&me);

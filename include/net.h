@@ -44,14 +44,15 @@ bool net_send_all(int fd, const void *buf, size_t len);
 /*
  * Create a TCP socket bound to *local_addr with SO_REUSEADDR + SO_REUSEPORT.
  *
- * SO_REUSEPORT is essential for the peer side: hole-punching reuses the
- * same local port for the rendezvous connection and the inbound P2P
- * connection from the other peer. The rendezvous side technically only
- * needs SO_REUSEADDR, but set both for symmetry.
+ * 'local_addr' may be either struct sockaddr_in (AF_INET) or struct
+ * sockaddr_in6 (AF_INET6), 'addr_len' is the appropriate sizeof for the
+ * concrete struct. The socket's family is taken from local_addr->sa_family.
  *
- * Returns the fd on success, or -1 on failure (with the cause logged).
+ * On success: return fd.
+ * On failure: log the cause, and return -1.
  */
-int net_make_bound_socket(const struct sockaddr_in *local_addr);
+int net_make_bound_socket(const struct sockaddr *local_addr,
+                          socklen_t addr_len);
 
 /*
  * Replace the first '\r' or '\n' in str with '\0'. No-op if neither
