@@ -188,7 +188,11 @@ static u8 socks5_parse_request(i32 cfd,
                 if (!net_recv_all(cfd, (u8 *)host, dlen)) return 0x01;
                 host[dlen] = '\0';
         } else if (atyp == 0x04) {              /* IPv6 */
-                return 0x08;
+                u8 ip6[16];
+                if (!net_recv_all(cfd, ip6, 16)) return 0x01;
+                struct in6_addr a;
+                memcpy(&a, ip6, 16);
+                if (inet_ntop(AF_INET6, &a, host, host_size) == NULL) return 0x01;
         } else {
                 return 0x08;
         }
@@ -445,10 +449,11 @@ static void run_joiner(ProxyCtx *ctx, u16 socks_port)
 
 /* ── DNS + connect ──────────────────────────────────────────────── */
 
-static int resolve_host(const char *host, u16 port, struct sockaddr_in *out)
+static int resolve_host(const char *host, u16 port,
+                        struct sockaddr_storage *out, socklen_t *out_len)
 {
         struct addrinfo hints = {0};
-        hints.ai_family   = AF_INET;
+        hints.ai_family   = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags    = AI_ADDRCONFIG;
 
@@ -461,14 +466,16 @@ static int resolve_host(const char *host, u16 port, struct sockaddr_in *out)
                 log_debug("getaddrinfo(%s): %s", host, gai_strerror(rc));
                 return -1;
         }
-        memcpy(out, res->ai_addr, sizeof(*out));
+        memcpy(out, res->ai_addr, res->ai_addrlen);
+        *out_len = res->ai_addrlen;
         freeaddrinfo(res);
         return 0;
 }
 
-static int connect_with_timeout(const struct sockaddr_in *sa, int timeout_ms)
+static int connect_with_timeout(const struct sockaddr_storage *sa,
+                                socklen_t sa_len, int timeout_ms)
 {
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        int fd = socket(sa->ss_family, SOCK_STREAM, 0);
         if (fd < 0) return -1;
 
         int flags = fcntl(fd, F_GETFL, 0);
@@ -551,15 +558,16 @@ static void *host_dialer_thread(void *arg)
         ProxyCtx *ctx = d->ctx;
         u32 id = d->stream_id;
 
-        struct sockaddr_in sa;
-        if (resolve_host(d->host, d->port, &sa) != 0) {
+        struct sockaddr_storage sa;
+        socklen_t sa_len;
+        if (resolve_host(d->host, d->port, &sa, &sa_len) != 0) {
                 log_info("Stream %u: cannot resolve %s", id, d->host);
                 send_open_fail(ctx, id, "dns failure");
                 free(d);
                 return NULL;
         }
 
-        int dfd = connect_with_timeout(&sa, PROXY_CONNECT_TIMEOUT_MS);
+        int dfd = connect_with_timeout(&sa, sa_len, PROXY_CONNECT_TIMEOUT_MS);
         if (dfd < 0) {
                 log_info("Stream %u: cannot connect to %s:%u",
                          id, d->host, d->port);
