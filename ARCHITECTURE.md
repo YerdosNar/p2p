@@ -233,7 +233,6 @@ paths. Stack buffers holding key material use `sodium_memzero`.
 
 ## What this codebase does not do
 
-- IPv6 (only AF_INET hard-coded; would require parallel paths in
   net.c and protocol.c)
 - TURN-style relay (no fallback when hole-punch fails)
 - Persistent message history (intentionally — no on-disk storage of chat)
@@ -254,3 +253,31 @@ both sides.
 
 There is no automated test suite. Adding one is the next step after
 documentation (see `feat/test-harness` or similar).
+
+## Address family handling
+
+OpenP2P is dual-stack. The rendezvous listens on a single AF_INET6
+socket with IPV6_V6ONLY=0, accepting both IPv4 and IPv6 clients;
+v4 arrives as v4-mapped v6 (::ffff:1.2.3.4) and is unmapped to bare
+v4 form before being stored in the room table.
+
+Peers use getaddrinfo with AF_UNSPEC + AI_ADDRCONFIG to connect to
+the rendezvous, trying each returned address until one succeeds.
+The chosen family is recorded and passed to the hole-punch.
+
+PROTO_PEER_INFO carries an explicit family byte (4 or 6) so peers
+know which family to dial. The hole-punch's local socket family
+matches the peer's family. When the local family used for the
+rendezvous matches the peer's family, the SO_REUSEPORT trick
+preserves the NAT mapping; when they differ, the hole-punch
+degrades to a plain dial (which usually fails — that's the
+expected outcome of a mixed-family scenario).
+
+SOCKS5 in proxy mode accepts ATYP=0x04 (IPv6) destinations as well
+as 0x01 (IPv4) and 0x03 (domain). The host-side dialer uses
+getaddrinfo with AF_UNSPEC, so domain names are resolved to
+whichever family routes from the host.
+
+The codebase does not bridge between families. A v4-only peer
+cannot talk to a v6-only peer even through a dual-stack rendezvous;
+they need a common family.

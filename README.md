@@ -16,6 +16,7 @@ to each other; it cannot decrypt or read any traffic.
 - Live file transfers with progress, resume-on-collision, ETA
 - Forward secrecy: past sessions remain confidential if long-term keys leak
 - Mid-transfer cancellation: Ctrl-C aborts transfer without ending the chat
+- IPv4 and IPv6 transport, dual-stack rendezvous
 
 ## Building
 
@@ -54,12 +55,12 @@ Note that any rendezvous server can attempt to MITM the initial handshake;
 
 Once a rendezvous is reachable, on the host side:
 ```bash
-./peer --host alice --password coffee --rendezvous-ip <some-ip>
+./peer --host alice --password coffee --rendezvous <ip-or-hostname>
 ```
 
 On the joiner side:
 ```bash
-./peer --join alice --password coffee --rendezvous-ip <some-ip>
+./peer --join alice --password coffee --rendezvous <ip-or-hostname>
 ```
 
 After the handshake completes, both peers see:

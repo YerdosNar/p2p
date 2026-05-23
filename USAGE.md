@@ -38,7 +38,9 @@ Required (one of):
 Required:
 --password <pw>          Room password (1-32 chars)
 Common options:
---rendezvous-ip <ip>     Rendezvous server IP (default: 127.0.0.1)
+-r, --rendezvous         Rendezvous hostname, IPv4, or IPv6 literal
+--domain                 Deprecated alias for -r/ --rendezvous
+--rendezvous-ip <ip>     Deprecated alias for -r/ --rendezvous
 --rendezvous-port <p>    Rendezvous server port (default: 8888)
 --identity <path>        Override identity file location
 -L, --log-level <lvl>    error | warn | info | debug (default: info)
@@ -70,6 +72,22 @@ During an active transfer (sending or receiving), keystrokes are silently
 dropped. Wait for the transfer to complete; chat resumes automatically.
 
 ## Common scenarios
+
+### Using an IPv6 rendezvous
+
+If your VPS has IPv6 and both peers have IPv6 routing:
+```bash
+# For host
+./peer --host alice --password p --rendezvous "vps.example.com"
+# For joiner
+./peer --join alice --password p --rendezvous "vps.example.com"
+```
+
+If the hostname resolves to both A and AAAA records, peers prefer IPv6 (via getaddrinfo's default ordering). To force IPv4:
+
+```bash
+./peer --rendezvous 123.45.67.89 ...
+```
 
 ### Two friends, talking for the first time
 
@@ -127,6 +145,9 @@ hole-punch trick. Possible workarounds:
   often helps)
 - Run both peers on networks behind cone NATs (most home routers)
 - Run one peer on a public IP
+
+Mixed-family scenarios can also produce this. If one peer connected to the rendezvous over IPv4 and the other over IPv6. OpenP2P logs "Mixed family: rendezvous IPvN, peer IPvM. True hole-punch not possible; attempting plain dial.".\
+Fix: have both peer connect to the rendezvous over the same family. With a dual-stack rendezvous you can force either family with the `--rendezvous` flag (use literal IP to skip getaddrinfo's choice).
 
 This branch does not include a TURN-style relay fallback.
 
