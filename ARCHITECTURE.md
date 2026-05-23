@@ -233,7 +233,6 @@ paths. Stack buffers holding key material use `sodium_memzero`.
 
 ## What this codebase does not do
 
-- IPv6 (only AF_INET hard-coded; would require parallel paths in
   net.c and protocol.c)
 - TURN-style relay (no fallback when hole-punch fails)
 - Persistent message history (intentionally — no on-disk storage of chat)
