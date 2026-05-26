@@ -69,7 +69,7 @@ static bool parse_args(int argc, char **argv)
         strncpy(args.rendezvous_host,
                 DEFAULT_RENDEZVOUS_IP,
                 sizeof(args.rendezvous_host) - 1);
-        args.rendezvous_host[INET_ADDRSTRLEN-1] = '\0';
+        args.rendezvous_host[sizeof(args.rendezvous_host)-1] = '\0';
         args.rendezvous_port = DEFAULT_RENDEZVOUS_PORT;
 
         for (int i = 1; i < argc; i++) {

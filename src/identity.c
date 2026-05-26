@@ -98,7 +98,7 @@ static bool load_existing(const char *path, Identity *out)
         u8 buf[IDENTITY_FILE_SIZE];
         size_t total = 0;
         while (total < (size_t)sizeof(buf)) {
-                size_t r = read(fd, buf + total, sizeof(buf) - total);
+                ssize_t r = read(fd, buf + total, sizeof(buf) - total);
                 if (r > 0) { total += r; continue; }
                 if (r == 0) break;
                 if (errno == EINTR) continue;
@@ -109,7 +109,7 @@ static bool load_existing(const char *path, Identity *out)
         }
         close(fd);
 
-        if (total != (ssize_t)sizeof(buf)) {
+        if (total != sizeof(buf)) {
                 log_error("Identity file %s has wrong size (%zd, expected %zu). "
                           "If corrupted, delete to regenerate.",
                           path, total, sizeof(buf));
