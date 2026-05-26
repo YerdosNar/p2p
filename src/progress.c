@@ -159,7 +159,7 @@ static void draw(ProgressBar *p, struct timespec now)
 
         /* Rest of the stats */
         n = snprintf(line + pos, sizeof(line) - pos,
-                     "] %3d \xE2\x80\x94 %s / %s \xE2\x80\x94 %s "
+                     "] %3d%% \xE2\x80\x94 %s / %s \xE2\x80\x94 %s "
                      "\xE2\x80\x94 ETA %s",
                      pct, cur_str, tot_str, rate_str, eta_str);
         if (n > 0) pos += (size_t)n;
