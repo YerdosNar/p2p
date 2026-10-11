@@ -119,8 +119,8 @@ This is a hobby project, not a hardened communication tool. For threats above
 
 ## Documentation
 
-- [USAGE.md](USAGE.md) — full flag reference, common scenarios, troubleshooting
-- [ARCHITECTURE.md](ARCHITECTURE.md) — code structure, protocol, threading
+- [USAGE.md](./docs/USAGE.md) — full flag reference, common scenarios, troubleshooting
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md) — code structure, protocol, threading
   model — read this before modifying the code
 
 ## License
