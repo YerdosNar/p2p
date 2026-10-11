@@ -125,4 +125,4 @@ This is a hobby project, not a hardened communication tool. For threats above
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](./docs/LICENSE).
