@@ -1,20 +1,32 @@
-# 캡스톤디자인 결과보고서 (P2P)
+<style>
+@media print {
+  h2, h3 { break-after: avoid; }                  /* keep heading with its text */
+  table, img, pre, blockquote { break-inside: avoid; }
+  tr { break-inside: avoid; }
+}
+</style>
 
-Oct 10, 2026 · @Yerdos
+# 캡스톤디자인 결과보고서 (P2P)
 
 **NAT 환경을 위한 종단 간 암호화 P2P 통신 시스템 OpenP2P의 설계 및 구현**
 
-학번 202311628 / 이름 나르지기토프 예르도스
+학번: 202311628
+이름: 나르지기토브 예르도스 (Yerdos Narzhigitov)
 
 **Design and Implementation of OpenP2P: An End-to-End Encrypted Peer-to-Peer Communication System for NAT Environments**
-
-Yerdos Narzhigitov
 
 ## 요 약
 
 이 보고서는 NAT 뒤에 있는 두 사용자가 중앙 서버에 내용을 맡기지 않고 직접 통신하는 종단 간 암호화 P2P 시스템 OpenP2P의 설계와 구현을 다룬다. 랑데뷰 서버는 방 ID와 비밀번호로 두 피어를 소개만 하고, 피어는 TCP 동시 열기 기반 홀 펀칭으로 직접 연결한다. 연결 후에는 X25519 임시 키와 장기 신원 키를 BLAKE2b로 함께 섞는 인증 핸드셰이크를 수행하여, 전방 비밀성을 얻고 중개 서버의 공개키 바꿔치기를 탐지한다. 그 위에서 XChaCha20-Poly1305로 암호화된 채팅, 파일 전송, SOCKS5 프록시를 제공한다. 루프백 환경 시험에서 공개키 바꿔치기를 9회 모두 탐지하였고, 1 GiB 파일을 무결성 손상 없이 평균 658 MB/s로 전송하였다. 또한 홀 펀칭의 경쟁 조건을 찾아 수정함으로써 연결 성공률을 87%에서 100%로 높였다.
 
 <키워드 : P2P, NAT 홀 펀칭, 종단 간 암호화, 전방 비밀성, 중간자 공격, libsodium>
+
+
+학생: Narzhigitov Yerdos \
+지도교수: 　　　　　 인
+
+
+<div style="break-after: page;"></div>
 
 ## I. 서 론
 
@@ -33,6 +45,8 @@ Yerdos Narzhigitov
 - 호스트를 출구 노드로 쓰는 SOCKS5 프록시 모드를 추가하여, 암호화된 P2P 터널 위에서 일반 TCP 트래픽을 중계할 수 있게 하였다.
 
 본 보고서의 구성은 다음과 같다. II장에서는 NAT 통과 기술과 기존 암호화 메신저를 살펴본다. III장에서는 시스템 구조, 프로토콜, 암호 설계, 구현 내용을 설명한다. IV장에서는 기능·보안·성능 시험 결과를 제시하고, V장에서 결론과 향후 과제를 정리한다.
+
+<div style="break-after: page;"></div>
 
 ## II. 관련 연구
 
@@ -63,6 +77,8 @@ Magic Wormhole \[11\]은 짧은 코드를 공유하여 두 컴퓨터 사이에 �
 
 정리하면, OpenP2P는 중앙 저장 없이 직접 연결하고 중개 서버의 키 바꿔치기를 암호학적으로 탐지한다는 점에서 기존 도구와 구분된다. 대신 대칭형 NAT에서는 연결할 수 없다는 한계를 갖는다.
 
+<div style="break-after: page;"></div>
+
 ## III. 주요 내용
 
 ### 3.1 요구사항
@@ -85,7 +101,8 @@ Magic Wormhole \[11\]은 짧은 코드를 공유하여 두 컴퓨터 사이에 �
 
 OpenP2P는 랑데뷰 서버 `rendezvous`와 사용자 프로그램 `peer` 두 개의 실행 파일로 구성된다. 랑데뷰 서버는 두 피어를 소개한 뒤 연결에서 빠지며, 이후 모든 트래픽은 피어 사이를 직접 오간다. 하나의 세션은 아래 네 단계를 차례로 거친다.
 
-&#91;embedded content: 그림 1. OpenP2P 세션 수립 과정 · 4단계\]
+![Session_process](./img_session_process.png)
+그림 1. OpenP2P 세션 수립 과정 · 4단계
 
 랑데뷰 서버는 ① 단계에만 참여하며, ②\~④ 단계는 두 피어 사이에서만 진행된다.
 
@@ -132,9 +149,9 @@ OpenP2P는 랑데뷰 서버 `rendezvous`와 사용자 프로그램 `peer` 두 �
 4. 네 개의 절반 키를 정렬한 뒤 BLAKE2b로 해시하여 하나의 세션 키를 만든다.
 5. 양쪽이 `P2P-HELLO`를 암호화하여 보내고, 상대의 메시지가 복호화되는지 확인한다.
 
-```latex
+$$
 K_{session} = \mathrm{BLAKE2b}\big(\mathrm{sort}(k_1^{rx},\ k_1^{tx},\ k_2^{rx},\ k_2^{tx})\big)
-```
+$$
 
 공개키가 바뀐 경우 공격자는 장기 비밀키가 없으므로 올바른 k2를 계산할 수 없다. 그 결과 양쪽의 세션 키가 달라지고 첫 `P2P-HELLO` 복호화가 실패하여 연결이 거부된다. 또한 임시 비밀키는 핸드셰이크 직후 `sodium_memzero`로 지우므로, 나중에 장기 키가 유출되어도 과거 세션의 k1을 복원할 수 없다.
 
@@ -177,9 +194,12 @@ K_{session} = \mathrm{BLAKE2b}\big(\mathrm{sort}(k_1^{rx},\ k_1^{tx},\ k_2^{rx},
 
 개발은 Git으로 관리하였으며, 기능마다 `feat/crypto`, `feat/rendezvous-auth`, `feat/proxy` 같은 브랜치를 만들고 병합하는 방식으로 진행하였다. 빌드는 Makefile로 하며, `make asan`은 AddressSanitizer와 스택 보호를 켜서 메모리 오류를 찾는 데 사용하였다. 실제로 핑거프린트 버퍼 크기 오류(19바이트)로 인한 오버플로를 이 과정에서 발견하여 수정하였다.
 
-&#91;embedded content: 그림 2. 개발 일정 · 2026년 4월 27일\~5월 26일\]
+![Build_process](./img_build_process.png)
+그림 2. 개발 일정 · 2026년 4월 27일\~5월 26일
 
 네트워크·암호 계층과 랑데뷰 서버를 먼저 완성한 뒤, 그 위에 피어 연결과 응용 기능을 차례로 올렸다.
+
+<div style="break-after: page;"></div>
 
 ## IV. 결과 평가
 
@@ -274,6 +294,8 @@ int connect_fd = open_connect(peer_family, local_port, peer_ip, peer_port);
 - **이어받기 없음**: 중단된 전송은 처음부터 다시 시작해야 한다.
 - **자동 시험 부재**: 저장소에는 자동 시험 코드가 없으며, 본 보고서의 시험 스크립트는 별도로 작성하였다.
 
+<div style="break-after: page;"></div>
+
 ## V. 결 론
 
 본 프로젝트에서는 중앙 서버에 내용을 맡기지 않고 두 사용자가 직접 통신하는 종단 간 암호화 P2P 시스템 OpenP2P를 C 언어로 설계·구현하였다. 랑데뷰 서버는 방 ID와 비밀번호로 두 피어를 소개만 하고, 피어는 TCP 홀 펀칭으로 직접 연결한 뒤 채팅, 파일 전송, SOCKS5 프록시를 암호화된 채널 위에서 제공한다.
@@ -288,7 +310,9 @@ int connect_fd = open_connect(peer_family, local_port, peer_ip, peer_port);
 4. 랑데뷰 서버에 IPv4 전용 대체 소켓을 두고, 핑거프린트를 공개키의 해시로 바꾼다.
 5. 스트림 ID 기반 다중화를 파일 전송에도 적용하여 전송 중에도 채팅이 가능하게 하고, 본 보고서의 시험 스크립트를 자동 시험으로 저장소에 포함한다.
 
-이 프로젝트를 통해 소켓 프로그래밍, NAT의 동작, 암호 프로토콜 설계, 멀티스레드 동기화를 하나의 시스템 안에서 연결하여 익힘 수 있었다. 특히 암호화만으로는 보안이 완성되지 않고, 누구와 통신하는지 확인하는 인증이 함께 설계되어야 한다는 점을 확인하였다.
+이 프로젝트를 통해 소켓 프로그래밍, NAT의 동작, 암호 프로토콜 설계, 멀티스레드 동기화를 하나의 시스템 안에서 연결하여 익힐 수 있었다. 특히 암호화만으로는 보안이 완성되지 않고, 누구와 통신하는지 확인하는 인증이 함께 설계되어야 한다는 점을 확인하였다.
+
+<div style="break-after: page;"></div>
 
 ## Ⅵ. 참 고 문 헌
 
@@ -307,4 +331,5 @@ int connect_fd = open_connect(peer_family, local_port, peer_ip, peer_port);
 
 ---
 
-이 보고서는 IT대학 컴퓨터공학과 202 년 학기 졸업보고서로 심사 통과되었음(지도교수: 　　　　　 인)
+학생: Narzhigitov Yerdos \
+지도교수: 　　　　　 인
